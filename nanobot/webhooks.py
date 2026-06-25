@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import json
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -46,6 +46,14 @@ class WebhookError(Exception):
         self.message = message
 
 
+@dataclass(frozen=True)
+class WebhookProvider:
+    verify_secret: Callable[[str, Mapping[str, str], bytes], None]
+    context: Callable[[Mapping[str, str], Mapping[str, Any]], dict[str, Any]]
+    default_prompt_lines: Callable[[dict[str, Any]], list[str]]
+    require_json: bool = False
+
+
 class WebhookRouter:
     """Validate webhook requests and enqueue accepted events on the message bus."""
 
@@ -67,6 +75,10 @@ class WebhookRouter:
             for name, route in config.routes.items():
                 if not route.enabled:
                     continue
+                try:
+                    _webhook_provider(route.provider)
+                except WebhookError as exc:
+                    raise ValueError(exc.message) from exc
                 self._routes[_route_path(name, route)] = (name, route)
 
     @property
@@ -132,7 +144,7 @@ class WebhookRouter:
             raise WebhookError(405, "webhook routes require POST")
         if len(body) > route.max_body_bytes:
             raise WebhookError(413, "webhook body is too large")
-        self._verify_auth(route, headers, body)
+        _verify_auth(route, headers, body)
         payload, body_text = _decode_body(route, body)
         context = _template_context(
             name=name,
@@ -183,34 +195,6 @@ class WebhookRouter:
             "route": name,
             "delivery_id": delivery_id or None,
         }
-
-    def _verify_auth(
-        self,
-        route: WebhookRouteConfig,
-        headers: Mapping[str, str],
-        body: bytes,
-    ) -> None:
-        if route.auth == "none":
-            return
-        secret = route.secret.strip()
-        if not secret:
-            raise WebhookError(500, "webhook route secret is not configured")
-        if route.provider == "github":
-            signature = headers.get("x-hub-signature-256", "")
-            if _hmac_matches(signature, secret, body):
-                return
-            raise WebhookError(401, "invalid GitHub webhook signature")
-
-        signature = headers.get("x-nanobot-signature-256", "")
-        if signature and _hmac_matches(signature, secret, body):
-            return
-        bearer = _bearer_token(headers.get("authorization", ""))
-        header_token = headers.get("x-nanobot-auth", "")
-        if (bearer and hmac.compare_digest(bearer, secret)) or (
-            header_token and hmac.compare_digest(header_token, secret)
-        ):
-            return
-        raise WebhookError(401, "invalid webhook secret")
 
     def _is_duplicate(
         self,
@@ -266,6 +250,39 @@ def _hmac_matches(signature: str, secret: str, body: bytes) -> bool:
     return hmac.compare_digest(supplied, expected)
 
 
+def _verify_auth(
+    route: WebhookRouteConfig,
+    headers: Mapping[str, str],
+    body: bytes,
+) -> None:
+    if route.auth == "none":
+        return
+    secret = route.secret.strip()
+    if not secret:
+        raise WebhookError(500, "webhook route secret is not configured")
+    _webhook_provider(route.provider).verify_secret(secret, headers, body)
+
+
+def _verify_generic_secret(secret: str, headers: Mapping[str, str], body: bytes) -> None:
+    signature = headers.get("x-nanobot-signature-256", "")
+    if signature and _hmac_matches(signature, secret, body):
+        return
+    bearer = _bearer_token(headers.get("authorization", ""))
+    header_token = headers.get("x-nanobot-auth", "")
+    if (bearer and hmac.compare_digest(bearer, secret)) or (
+        header_token and hmac.compare_digest(header_token, secret)
+    ):
+        return
+    raise WebhookError(401, "invalid webhook secret")
+
+
+def _verify_github_secret(secret: str, headers: Mapping[str, str], body: bytes) -> None:
+    signature = headers.get("x-hub-signature-256", "")
+    if _hmac_matches(signature, secret, body):
+        return
+    raise WebhookError(401, "invalid GitHub webhook signature")
+
+
 def _decode_body(route: WebhookRouteConfig, body: bytes) -> tuple[Any, str]:
     try:
         text = body.decode("utf-8")
@@ -276,8 +293,8 @@ def _decode_body(route: WebhookRouteConfig, body: bytes) -> tuple[Any, str]:
     try:
         return json.loads(text), text
     except json.JSONDecodeError as exc:
-        if route.provider == "github":
-            raise WebhookError(400, "GitHub webhook body must be JSON") from exc
+        if _webhook_provider(route.provider).require_json:
+            raise WebhookError(400, f"{route.provider} webhook body must be JSON") from exc
         return None, text
 
 
@@ -291,15 +308,9 @@ def _template_context(
     remote: str | None,
 ) -> dict[str, Any]:
     event = payload if isinstance(payload, dict) else {}
-    github = _github_context(headers, event) if route.provider == "github" else {}
-    event_name = github.get("event") or headers.get("x-nanobot-event") or ""
-    delivery_id = (
-        github.get("delivery_id")
-        or headers.get("x-nanobot-delivery")
-        or headers.get("x-webhook-id")
-        or headers.get("x-request-id")
-        or ""
-    )
+    provider_context = _webhook_provider(route.provider).context(headers, event)
+    event_name = provider_context.pop("event_name", "")
+    delivery_id = provider_context.pop("delivery_id", "")
     return {
         "route": {
             "name": name,
@@ -315,10 +326,57 @@ def _template_context(
         "body": body_text,
         "headers": _safe_headers(headers),
         "remote": remote or "",
-        "github": github,
+        "github": provider_context.get("github", {}),
         "event_name": event_name,
         "delivery_id": delivery_id,
+        **provider_context,
     }
+
+
+def _generic_context(headers: Mapping[str, str], _payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "event_name": headers.get("x-nanobot-event", ""),
+        "delivery_id": (
+            headers.get("x-nanobot-delivery")
+            or headers.get("x-webhook-id")
+            or headers.get("x-request-id")
+            or ""
+        ),
+    }
+
+
+def _generic_prompt_lines(_context: dict[str, Any]) -> list[str]:
+    return []
+
+
+def _github_provider_context(
+    headers: Mapping[str, str],
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    github = _github_context(headers, payload)
+    return {
+        "github": github,
+        "event_name": github.get("event", ""),
+        "delivery_id": github.get("delivery_id", ""),
+    }
+
+
+def _github_prompt_lines(context: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    github = context.get("github") or {}
+    if github.get("repository_full_name"):
+        lines.append(f"Repository: {github['repository_full_name']}")
+    if github.get("action"):
+        lines.append(f"Action: {github['action']}")
+    if github.get("sender_login"):
+        lines.append(f"Sender: {github['sender_login']}")
+    if github.get("ref"):
+        lines.append(f"Ref: {github['ref']}")
+    if github.get("pull_request_title"):
+        lines.append(f"Pull request: {github['pull_request_title']}")
+    elif github.get("issue_title"):
+        lines.append(f"Issue: {github['issue_title']}")
+    return lines
 
 
 def _github_context(headers: Mapping[str, str], payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -340,6 +398,29 @@ def _github_context(headers: Mapping[str, str], payload: Mapping[str, Any]) -> d
         "pull_request_title": _nested_str(pull_request, "title"),
         "ref": _str_or_empty(payload.get("ref")),
     }
+
+
+_WEBHOOK_PROVIDERS: dict[str, WebhookProvider] = {
+    # ponytail: internal registry, add entry-point loading if third-party providers appear.
+    "generic": WebhookProvider(
+        verify_secret=_verify_generic_secret,
+        context=_generic_context,
+        default_prompt_lines=_generic_prompt_lines,
+    ),
+    "github": WebhookProvider(
+        verify_secret=_verify_github_secret,
+        context=_github_provider_context,
+        default_prompt_lines=_github_prompt_lines,
+        require_json=True,
+    ),
+}
+
+
+def _webhook_provider(name: str) -> WebhookProvider:
+    try:
+        return _WEBHOOK_PROVIDERS[name]
+    except KeyError as exc:
+        raise WebhookError(500, f"webhook provider {name!r} is not registered") from exc
 
 
 def _safe_headers(headers: Mapping[str, str]) -> dict[str, str]:
@@ -399,20 +480,7 @@ def _default_prompt(context: dict[str, Any]) -> str:
         lines.append(f"Event: {event_name}")
     if delivery_id:
         lines.append(f"Delivery ID: {delivery_id}")
-    if provider == "github":
-        github = context.get("github") or {}
-        if github.get("repository_full_name"):
-            lines.append(f"Repository: {github['repository_full_name']}")
-        if github.get("action"):
-            lines.append(f"Action: {github['action']}")
-        if github.get("sender_login"):
-            lines.append(f"Sender: {github['sender_login']}")
-        if github.get("ref"):
-            lines.append(f"Ref: {github['ref']}")
-        if github.get("pull_request_title"):
-            lines.append(f"Pull request: {github['pull_request_title']}")
-        elif github.get("issue_title"):
-            lines.append(f"Issue: {github['issue_title']}")
+    lines.extend(_webhook_provider(provider).default_prompt_lines(context))
     lines.extend(["", "Payload:", _format_payload(context.get("payload"), context.get("body", ""))])
     return "\n".join(lines)
 

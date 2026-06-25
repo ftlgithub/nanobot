@@ -359,6 +359,21 @@ def test_webhook_config_requires_target_for_enabled_routes() -> None:
         WebhooksConfig(routes={"bad": WebhookRouteConfig(auth="none", to="telegram")})
 
 
+def test_webhook_router_rejects_unregistered_provider() -> None:
+    config = WebhooksConfig(
+        routes={
+            "stripe": WebhookRouteConfig(
+                provider="stripe",
+                auth="none",
+                to="telegram:1",
+            )
+        }
+    )
+
+    with pytest.raises(ValueError, match="not registered"):
+        WebhookRouter(config, MessageBus())
+
+
 def test_webhook_config_allows_incomplete_routes_when_webhooks_disabled() -> None:
     config = WebhooksConfig(
         enabled=False,

@@ -307,7 +307,7 @@ class WebhookRouteConfig(Base):
 
     enabled: bool = True
     path: str = ""  # Defaults to /webhooks/<route-name>.
-    provider: Literal["generic", "github"] = "generic"
+    provider: str = "generic"
     auth: Literal["secret", "none"] = "secret"
     secret: str = Field(default="", repr=False)
     to: str = ""  # Required when enabled, e.g. "websocket:github" or "telegram:12345".
@@ -319,6 +319,10 @@ class WebhookRouteConfig(Base):
 
     @model_validator(mode="after")
     def _validate_route(self) -> "WebhookRouteConfig":
+        if re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", self.provider) is None:
+            raise ValueError(
+                "webhook provider names may contain only letters, numbers, '_', '.', and '-'"
+            )
         if self.path:
             if not self.path.startswith("/"):
                 raise ValueError("webhook route path must start with '/'")
