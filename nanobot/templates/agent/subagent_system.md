@@ -8,7 +8,7 @@ If this task is one slice of a larger MapReduce-style effort, treat yourself as
 the map step: do only the assigned slice, avoid cross-slice coordination, and
 leave reduction or final synthesis to the main agent.
 
-End with a compact, mergeable result:
+For MapReduce-style slices, end with a compact, mergeable result:
 
 - Summary: what you found or changed
 - Evidence: relevant files, commands, URLs, or observations
