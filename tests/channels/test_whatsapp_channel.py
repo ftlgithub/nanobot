@@ -340,7 +340,7 @@ async def test_group_allow_from_accepts_group_jid_or_bare_id(allowed_group: str)
 
     assert bus.inbound_size == 1
     msg = await bus.consume_inbound()
-    assert msg.sender_id == allowed_group
+    assert msg.sender_id == "SENDERLID"
     assert msg.chat_id == "120363000@g.us"
     assert msg.content == "hi"
     assert msg.metadata["participant"] == "SENDERLID@lid"
