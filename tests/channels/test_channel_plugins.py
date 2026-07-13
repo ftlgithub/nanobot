@@ -23,8 +23,13 @@ from nanobot.bus.outbound_events import (
     outbound_message_for_event,
 )
 from nanobot.bus.queue import MessageBus
-from nanobot.channels._setup import ChannelFieldSpec, ChannelSetupSpec, SetupRequirement
-from nanobot.channels.base import BaseChannel, ChannelInstanceSpec
+from nanobot.channels.base import BaseChannel
+from nanobot.channels.contracts import (
+    ChannelFieldSpec,
+    ChannelInstanceSpec,
+    ChannelSetupSpec,
+    SetupRequirement,
+)
 from nanobot.channels.manager import ChannelManager
 from nanobot.config.loader import load_config, save_config
 from nanobot.config.schema import ChannelsConfig, Config
@@ -74,10 +79,11 @@ class _SetupPlugin(_FakePlugin):
             },
             required=(SetupRequirement((("token",),)),),
             official_url="https://plugin.example/setup",
+            validator=cls._validate_setup,
         )
 
-    @classmethod
-    def validate_setup(cls, values):
+    @staticmethod
+    def _validate_setup(values):
         token = str(values.get("token") or "")
         return {
             "status": "connected" if token.startswith("plugin-") else "invalid",
@@ -126,7 +132,6 @@ class _FakeMultiChannel(BaseChannel):
         instances = section.get("instances", []) if isinstance(section, dict) else []
         return [
             ChannelInstanceSpec(
-                base_name=cls.name,
                 instance_id=item["id"],
                 runtime_name=cls.runtime_name(item["id"]),
                 config=item,
@@ -307,8 +312,6 @@ def test_plugin_setup_contract_drives_feature_payload(monkeypatch: pytest.Monkey
                 "required": False,
             },
         ],
-        "requirements": [[['token']]],
-        "multi_instance": False,
         "official_url": "https://plugin.example/setup",
     }
     assert feature["configured_fields"] == [

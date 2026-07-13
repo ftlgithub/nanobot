@@ -15,8 +15,9 @@ from typing import Any
 
 import httpx
 
-from nanobot.channels._setup import ChannelSetupSpec, channel_setup_spec
+from nanobot.channels._setup import channel_setup_spec
 from nanobot.channels.base import BaseChannel
+from nanobot.channels.contracts import ChannelSetupSpec, channel_instance_config
 from nanobot.channels.registry import load_any_channel_class
 from nanobot.config.loader import load_config
 from nanobot.security.network import resolve_url_target
@@ -64,8 +65,8 @@ def validate_channel_config(
     )
     values = _merge_form_values(channel, values, raw_values or {}, setup_spec=setup_spec)
 
-    if channel_cls is not None:
-        custom_payload = channel_cls.validate_setup(values)
+    if setup_spec is not None and setup_spec.validator is not None:
+        custom_payload = setup_spec.validator(values)
         if custom_payload is not None:
             payload = dict(custom_payload)
             payload.setdefault("checks", [])
@@ -355,7 +356,7 @@ def _channel_config(
     instance_id: str,
 ) -> dict[str, Any]:
     if channel_cls is not None:
-        return channel_cls.instance_config(section, instance_id=instance_id)
+        return channel_instance_config(channel_cls, section, instance_id=instance_id)
     if hasattr(section, "model_dump"):
         return dict(section.model_dump(mode="json", by_alias=True))
     if isinstance(section, dict):

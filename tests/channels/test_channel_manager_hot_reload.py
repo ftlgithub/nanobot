@@ -5,7 +5,8 @@ import asyncio
 import pytest
 
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.base import BaseChannel, ChannelInstanceSpec
+from nanobot.channels.base import BaseChannel
+from nanobot.channels.contracts import ChannelInstanceSpec
 from nanobot.channels.manager import ChannelManager
 from nanobot.config.schema import Config
 
@@ -45,7 +46,6 @@ class _MultiHotChannel(_HotChannel):
         instances = section.get("instances", []) if isinstance(section, dict) else []
         return [
             ChannelInstanceSpec(
-                base_name=cls.name,
                 instance_id=item["id"],
                 runtime_name=cls.runtime_name(item["id"]),
                 config=item,

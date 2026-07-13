@@ -715,8 +715,6 @@ export interface ChannelSetupContractField {
 
 export interface ChannelSetupContract {
   fields: ChannelSetupContractField[];
-  requirements: string[][][];
-  multi_instance: boolean;
   official_url?: string;
 }
 

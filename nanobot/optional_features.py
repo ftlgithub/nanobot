@@ -13,11 +13,15 @@ from loguru import logger
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
-from nanobot.channels._setup import (
+from nanobot.channels._setup import channel_setup_spec
+from nanobot.channels.contracts import (
     ChannelSetupSpec,
+    channel_feature_instances,
     channel_field_value,
-    channel_setup_spec,
+    channel_instance_specs,
+    channel_set_config_enabled,
     channel_value_present,
+    refresh_channel_feature_metadata,
     stringify_channel_value,
 )
 from nanobot.channels.registry import DEFAULT_ENABLED_CHANNELS
@@ -296,7 +300,8 @@ def set_channel_config_enabled(
         existing["enabled"] = enabled
         channels[channel_name] = existing
     else:
-        channels[channel_name] = channel_cls.set_config_enabled(
+        channels[channel_name] = channel_set_config_enabled(
+            channel_cls,
             existing,
             enabled,
             instance_id=instance_id,
@@ -310,7 +315,7 @@ def channel_enabled(config: Config, name: str, channel_cls: Any | None = None) -
     if section is None:
         return default_enabled
     if channel_cls is not None:
-        return bool(channel_cls.instance_specs(section, enabled_only=True))
+        return bool(channel_instance_specs(channel_cls, section, enabled_only=True))
     if isinstance(section, dict):
         instances = section.get("instances")
         if isinstance(instances, list):
@@ -403,7 +408,11 @@ def channel_configured(
     if spec is not None and spec.multi_instance and channel_cls is not None:
         return any(
             _channel_has_required_setup(instance.config, spec)
-            for instance in channel_cls.instance_specs(section, enabled_only=False)
+            for instance in channel_instance_specs(
+                channel_cls,
+                section,
+                enabled_only=False,
+            )
         )
 
     if not spec or not spec.required:
@@ -471,7 +480,11 @@ def optional_features_payload(
             if configured_fields:
                 feature["configured_fields"] = configured_fields
         if channel_cls is not None:
-            instances = channel_cls.feature_instances(getattr(config.channels, name, None))
+            instances = channel_feature_instances(
+                channel_cls,
+                getattr(config.channels, name, None),
+                setup_spec=setup_spec,
+            )
             if instances is not None:
                 feature["instances"] = instances
         features.append(feature)
@@ -567,7 +580,11 @@ def enable_optional_feature(
 
     if name in builtin_channels or name in plugin_channels:
         try:
-            channel_cls.refresh_feature_metadata(config_path, instance_id=instance_id)
+            refresh_channel_feature_metadata(
+                channel_cls,
+                config_path,
+                instance_id=instance_id,
+            )
         except Exception as exc:
             logger.warning("Could not refresh {} channel metadata: {}", name, exc)
 

@@ -12,7 +12,7 @@ from typing import Any
 
 from loguru import logger
 
-from nanobot.channels.base import ChannelInstanceSpec
+from nanobot.channels.contracts import ChannelInstanceSpec
 from nanobot.config.loader import merge_missing_defaults
 
 DEFAULT_INSTANCE_ID = "default"
@@ -99,7 +99,6 @@ def feishu_instance_specs(
         instance_id = str(config["instanceId"])
         specs.append(
             ChannelInstanceSpec(
-                base_name="feishu",
                 instance_id=instance_id,
                 runtime_name=runtime_channel_name("feishu", instance_id),
                 config=config,
@@ -162,13 +161,3 @@ def update_feishu_instance_preserving_shape(
         return {**section, **values}
 
     return upsert_feishu_instance(section, defaults, instance_id, values)
-
-
-def set_feishu_instance_enabled(
-    section: Any,
-    defaults: dict[str, Any],
-    instance_id: str,
-    enabled: bool,
-) -> dict[str, Any]:
-    """Return canonical Feishu section with one instance's enabled flag updated."""
-    return upsert_feishu_instance(section, defaults, instance_id, {"enabled": enabled})

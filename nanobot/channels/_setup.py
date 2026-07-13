@@ -1,114 +1,15 @@
-"""Shared channel setup contract for configuration, display, and validation."""
+"""Built-in channel setup metadata and plugin contract resolution."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
-FieldKind = Literal["string", "secret", "list", "bool", "int", "enum"]
-RouteFieldType = str | tuple[str, set[str]]
-
-
-@dataclass(frozen=True)
-class ChannelFieldSpec:
-    """One channel field exposed through the settings contract."""
-
-    kind: FieldKind = "string"
-    choices: frozenset[str] = frozenset()
-    writable: bool = True
-    snapshot: bool = True
-
-    @property
-    def route_type(self) -> RouteFieldType:
-        if self.kind == "enum":
-            return ("enum", set(self.choices))
-        return self.kind
-
-
-@dataclass(frozen=True)
-class SetupRequirement:
-    """A requirement satisfied by any one complete field group."""
-
-    alternatives: tuple[tuple[str, ...], ...]
-
-    def is_satisfied(self, values: Any) -> bool:
-        return any(
-            all(channel_value_present(channel_field_value(values, field)) for field in group)
-            for group in self.alternatives
-        )
-
-    @property
-    def simple_field(self) -> str | None:
-        if len(self.alternatives) == 1 and len(self.alternatives[0]) == 1:
-            return self.alternatives[0][0]
-        return None
-
-
-@dataclass(frozen=True)
-class ChannelSetupSpec:
-    """Save, display, and validation contract for one channel."""
-
-    fields: dict[str, ChannelFieldSpec]
-    required: tuple[SetupRequirement, ...] = ()
-    official_url: str | None = None
-    multi_instance: bool = False
-
-    @property
-    def secrets(self) -> frozenset[str]:
-        return frozenset(name for name, field in self.fields.items() if field.kind == "secret")
-
-    @property
-    def snapshot_fields(self) -> tuple[str, ...]:
-        return tuple(name for name, field in self.fields.items() if field.snapshot)
-
-    @property
-    def route_field_types(self) -> dict[str, RouteFieldType]:
-        return {
-            name: field.route_type
-            for name, field in self.fields.items()
-            if field.writable
-        }
-
-    @property
-    def simple_required_fields(self) -> tuple[str, ...]:
-        return tuple(
-            field
-            for requirement in self.required
-            if (field := requirement.simple_field) is not None
-        )
-
-    def is_configured(self, values: Any) -> bool:
-        return bool(self.required) and all(
-            requirement.is_satisfied(values) for requirement in self.required
-        )
-
-    def to_public_dict(self, channel_name: str) -> dict[str, Any]:
-        """Serialize the writable setup contract for generic WebUI consumers."""
-        simple_required = set(self.simple_required_fields)
-        fields = []
-        for name, field in self.fields.items():
-            if not field.writable:
-                continue
-            fields.append(
-                {
-                    "key": f"channels.{channel_name}.{name}",
-                    "field": name,
-                    "kind": field.kind,
-                    "choices": sorted(field.choices),
-                    "required": name in simple_required,
-                }
-            )
-        payload: dict[str, Any] = {
-            "fields": fields,
-            "requirements": [
-                [list(group) for group in requirement.alternatives]
-                for requirement in self.required
-            ],
-            "multi_instance": self.multi_instance,
-        }
-        if self.official_url:
-            payload["official_url"] = self.official_url
-        return payload
+from nanobot.channels.contracts import (
+    ChannelFieldSpec,
+    ChannelSetupSpec,
+    FieldKind,
+    SetupRequirement,
+)
 
 
 def _field(
@@ -330,7 +231,7 @@ def channel_setup_spec(
 ) -> ChannelSetupSpec | None:
     """Return a channel-owned setup contract, falling back to built-in metadata.
 
-    External channel plugins can override ``BaseChannel.setup_spec`` without
+    External channel plugins can provide ``setup_spec`` without
     requiring a nanobot core change.  The built-in table remains a compatibility
     fallback while built-in channels migrate to the same hook incrementally.
     """
@@ -345,48 +246,3 @@ def channel_setup_spec(
                     )
                 return spec
     return CHANNEL_SETUP_SPECS.get(name)
-
-
-def channel_field_value(values: Any, field_path: str) -> Any:
-    current = values
-    for part in field_path.split("."):
-        candidates = (part, _camel_to_snake(part))
-        if isinstance(current, dict):
-            for candidate in candidates:
-                if candidate in current:
-                    current = current[candidate]
-                    break
-            else:
-                return None
-            continue
-        for candidate in candidates:
-            if hasattr(current, candidate):
-                current = getattr(current, candidate)
-                break
-        else:
-            return None
-    return current
-
-
-def channel_value_present(value: Any) -> bool:
-    return value not in (None, "", [], {})
-
-
-def stringify_channel_value(value: Any) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, list):
-        return ", ".join(str(item) for item in value)
-    return str(value)
-
-
-def _camel_to_snake(value: str) -> str:
-    chars: list[str] = []
-    for char in value:
-        if char.isupper():
-            if chars:
-                chars.append("_")
-            chars.append(char.lower())
-        else:
-            chars.append(char)
-    return "".join(chars)

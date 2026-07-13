@@ -38,8 +38,6 @@ describe("channelSetup", () => {
             required: false,
           },
         ],
-        requirements: [[["apiToken"]]],
-        multi_instance: false,
         official_url: "https://plugin.example/setup",
       },
     }));
@@ -74,8 +72,6 @@ describe("channelSetup", () => {
           choices: [],
           required: true,
         }],
-        requirements: [[["token"]]],
-        multi_instance: false,
       },
     }));
 

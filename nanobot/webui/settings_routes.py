@@ -21,6 +21,10 @@ from nanobot.agent.tools.mcp import request_mcp_reload
 from nanobot.api.runtime import ApiRuntime, ApiStartOptions, api_runtime_paths
 from nanobot.bus.queue import MessageBus
 from nanobot.channels._setup import channel_setup_spec
+from nanobot.channels.contracts import (
+    channel_instance_config,
+    channel_update_instance_config,
+)
 from nanobot.channels.registry import load_any_channel_class
 from nanobot.config.loader import get_config_path, load_config, save_config
 from nanobot.optional_features import (
@@ -783,7 +787,11 @@ class WebUISettingsRouter:
         config = load_config()
         section = getattr(config.channels, name, None)
         if channel_cls is not None:
-            channel_config = channel_cls.instance_config(section, instance_id=instance_id)
+            channel_config = channel_instance_config(
+                channel_cls,
+                section,
+                instance_id=instance_id,
+            )
         elif hasattr(section, "model_dump"):
             channel_config = section.model_dump(mode="json", by_alias=True)
         else:
@@ -805,7 +813,8 @@ class WebUISettingsRouter:
             saved.append(raw_key)
 
         updated_section = (
-            channel_cls.update_instance_config(
+            channel_update_instance_config(
+                channel_cls,
                 section,
                 channel_config,
                 instance_id=instance_id,

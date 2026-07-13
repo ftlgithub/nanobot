@@ -34,7 +34,8 @@ from nanobot.channels._feishu_instances import (
     upsert_feishu_instance,
 )
 from nanobot.channels._feishu_ws import get_feishu_ws_runner
-from nanobot.channels.base import BaseChannel, ChannelInstanceSpec
+from nanobot.channels.base import BaseChannel
+from nanobot.channels.contracts import ChannelInstanceSpec, ChannelSetupSpec
 from nanobot.command.router import normalize_command_text
 from nanobot.config.paths import get_media_dir
 from nanobot.config.schema import Base
@@ -897,24 +898,6 @@ class FeishuChannel(BaseChannel):
         )
 
     @classmethod
-    def set_config_enabled(
-        cls,
-        section: Any,
-        enabled: bool,
-        *,
-        instance_id: str = DEFAULT_INSTANCE_ID,
-    ) -> dict[str, Any]:
-        from nanobot.channels._feishu_instances import set_feishu_instance_enabled
-
-        existing = section if isinstance(section, dict) else {}
-        return set_feishu_instance_enabled(
-            existing,
-            cls.default_config(),
-            instance_id,
-            enabled,
-        )
-
-    @classmethod
     def update_instance_config(
         cls,
         section: Any,
@@ -933,10 +916,12 @@ class FeishuChannel(BaseChannel):
         )
 
     @classmethod
-    def feature_instances(cls, section: Any) -> list[dict[str, Any]]:
-        from nanobot.channels._setup import channel_setup_spec
-
-        setup = channel_setup_spec(cls.name, cls)
+    def feature_instances(
+        cls,
+        section: Any,
+        *,
+        setup_spec: ChannelSetupSpec | None = None,
+    ) -> list[dict[str, Any]]:
         instances = []
         for spec in cls.instance_specs(section, enabled_only=False):
             config = spec.config
@@ -950,7 +935,9 @@ class FeishuChannel(BaseChannel):
                     "avatar_url": config.get("avatarUrl") or "",
                     "domain": config.get("domain") or "feishu",
                     "enabled": bool(config.get("enabled", False)),
-                    "configured": bool(setup and setup.is_configured(config)),
+                    "configured": bool(
+                        setup_spec and setup_spec.is_configured(config)
+                    ),
                     "app_id": config.get("appId") or config.get("app_id") or "",
                     "group_policy": config.get("groupPolicy") or "mention",
                     "allow_from": list(config.get("allowFrom") or []),
