@@ -1,28 +1,26 @@
 """Dependency-free Feishu/Lark management contract."""
 
-from nanobot.channels.contracts import ChannelFieldSpec, ChannelSetupSpec, SetupRequirement
+from nanobot.channels.contracts import ChannelSetupSpec
+from nanobot.channels.manifests._shared import DIRECT_GROUP_POLICIES, field, required_fields
 
 SETUP_SPEC = ChannelSetupSpec(
     fields={
-        "appId": ChannelFieldSpec(snapshot=False),
-        "appSecret": ChannelFieldSpec(kind="secret", snapshot=False),
-        "domain": ChannelFieldSpec(
-            kind="enum",
-            choices=frozenset({"feishu", "lark"}),
+        "appId": field(snapshot=False),
+        "appSecret": field("secret", snapshot=False),
+        "domain": field(
+            "enum",
+            choices={"feishu", "lark"},
             snapshot=False,
         ),
-        "groupPolicy": ChannelFieldSpec(
-            kind="enum",
-            choices=frozenset({"mention", "open"}),
+        "groupPolicy": field(
+            "enum",
+            choices=DIRECT_GROUP_POLICIES,
             snapshot=False,
         ),
-        "allowFrom": ChannelFieldSpec(kind="list", snapshot=False),
-        "topicIsolation": ChannelFieldSpec(kind="bool", snapshot=False),
+        "allowFrom": field("list", snapshot=False),
+        "topicIsolation": field("bool", snapshot=False),
     },
-    required=(
-        SetupRequirement.field("appId"),
-        SetupRequirement.field("appSecret"),
-    ),
+    required=required_fields("appId", "appSecret"),
     official_url="https://open.feishu.cn/app",
     multi_instance=True,
 )

@@ -310,6 +310,13 @@ exception for malformed persisted data rather than silently changing instance
 identity. Keep metadata refresh behind `refresh_feature_metadata()` so feature
 GET requests remain read-only.
 
+Built-in channels use the same setup types but declare them in
+`nanobot/channels/manifests/<channel>.py`. These modules must stay free of
+optional platform SDK imports so settings discovery remains lazy. `_setup.py`
+only resolves manifests and external plugin hooks; do not add a central
+per-channel fallback table there. Shared declarative constructors live in
+`nanobot/channels/manifests/_shared.py`.
+
 ### Optional (streaming)
 
 | Method | Description |

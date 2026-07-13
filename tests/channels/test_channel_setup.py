@@ -1,4 +1,29 @@
-from nanobot.channels._setup import CHANNEL_SETUP_SPECS, channel_setup_spec
+import ast
+import pkgutil
+from pathlib import Path
+
+import nanobot.channels._setup as channel_setup_module
+import nanobot.channels.manifests as manifest_package
+from nanobot.channels._setup import channel_setup_spec
+
+EXPECTED_SETUP_CHANNELS = {
+    "dingtalk",
+    "discord",
+    "email",
+    "feishu",
+    "matrix",
+    "mattermost",
+    "msteams",
+    "napcat",
+    "qq",
+    "signal",
+    "slack",
+    "telegram",
+    "websocket",
+    "wecom",
+    "weixin",
+    "whatsapp",
+}
 
 
 def test_channel_setup_spec_derives_route_and_secret_metadata() -> None:
@@ -54,10 +79,37 @@ def test_webui_forms_have_writable_mattermost_and_whatsapp_contracts() -> None:
     )
 
 
-def test_feishu_setup_is_owned_by_dependency_free_manifest() -> None:
-    feishu = channel_setup_spec("feishu")
+def test_all_builtin_setup_contracts_are_dependency_free_manifests() -> None:
+    manifest_names = {
+        name
+        for _, name, ispkg in pkgutil.iter_modules(
+            [str(Path(manifest_package.__file__).parent)]
+        )
+        if not name.startswith("_") and not ispkg
+    }
 
-    assert "feishu" not in CHANNEL_SETUP_SPECS
-    assert feishu is not None
-    assert feishu.multi_instance is True
+    assert not hasattr(channel_setup_module, "CHANNEL_SETUP_SPECS")
+    assert manifest_names == EXPECTED_SETUP_CHANNELS
+    assert all(channel_setup_spec(name) is not None for name in manifest_names)
+
+    feishu = channel_setup_spec("feishu")
+    assert feishu is not None and feishu.multi_instance is True
     assert feishu.simple_required_fields == ("appId", "appSecret")
+
+
+def test_builtin_setup_manifests_only_import_contract_modules() -> None:
+    manifest_dir = Path(manifest_package.__file__).parent
+    allowed_imports = {
+        "nanobot.channels.contracts",
+        "nanobot.channels.manifests._shared",
+    }
+
+    for name in EXPECTED_SETUP_CHANNELS:
+        tree = ast.parse((manifest_dir / f"{name}.py").read_text(encoding="utf-8"))
+        imports: set[str] = set()
+        for node in tree.body:
+            if isinstance(node, ast.Import):
+                imports.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module)
+        assert imports <= allowed_imports, f"{name} imports runtime dependencies: {imports}"

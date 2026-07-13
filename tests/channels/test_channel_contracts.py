@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from typing import Any
 
 import pytest
@@ -76,6 +78,32 @@ def test_management_contract_is_explicit_on_runtime_base_class() -> None:
 
 def test_contract_module_is_not_discovered_as_a_channel() -> None:
     assert "contracts" not in discover_channel_names()
+    assert "manifests" not in discover_channel_names()
+
+
+def test_settings_contract_import_does_not_eagerly_load_runtime_graph() -> None:
+    code = """
+import sys
+import nanobot.webui.channel_validation
+
+unexpected = {
+    "nanobot.channels.manager",
+    "nanobot.channels.websocket",
+    "nanobot.webui.gateway_services",
+} & sys.modules.keys()
+assert not unexpected, sorted(unexpected)
+
+from nanobot.channels import ChannelManager
+assert ChannelManager.__name__ == "ChannelManager"
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize(
