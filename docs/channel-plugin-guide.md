@@ -247,6 +247,12 @@ nanobot channels login <channel_name> --force  # re-authenticate
 | `_handle_message(sender_id, chat_id, content, media?, metadata?, session_key?)` | **Call this when you receive a message.** Checks `is_allowed()`, then publishes to the bus. Automatically sets `_wants_stream` if `supports_streaming` is true. |
 | `is_allowed(sender_id)` | Checks against `config.allow_from`; `"*"` allows all, `[]` denies all. |
 | `default_config()` (classmethod) | Returns default config dict for `nanobot onboard`. Override to declare your fields. |
+| `setup_spec()` (classmethod) | Optional typed contract for WebUI-editable fields and validation. |
+| `runtime_name(instance_id)` (classmethod) | Returns the runtime routing key. Override only for multi-instance channels. |
+| `instance_specs(section, enabled_only=True)` (classmethod) | Expands persisted config into typed runtime instances. Override only for multi-instance channels. |
+| `update_instance_config(section, values, instance_id)` (classmethod) | Writes one instance while preserving the plugin-owned storage shape. |
+| `feature_instances(section, setup_spec)` (classmethod) | Optionally exposes instance summaries to settings consumers. |
+| `refresh_feature_metadata(config_path, instance_id)` (classmethod) | Optionally refreshes saved display metadata after an explicit settings action. It is never called by a read-only feature GET. |
 | `transcribe_audio(file_path)` | Transcribes audio via the shared top-level `transcription` config (if configured). |
 | `supports_streaming` (property) | `True` when config has `"streaming": true` **and** subclass overrides `send_delta()`. |
 | `is_running` | Returns `self._running`. |
@@ -254,6 +260,55 @@ nanobot channels login <channel_name> --force  # re-authenticate
 | `send_reasoning_delta(chat_id, delta, metadata?, *, stream_id?)` | Optional hook for streamed model reasoning/thinking content. Default is no-op. |
 | `send_reasoning_end(chat_id, metadata?, *, stream_id?)` | Optional hook marking the end of a reasoning block. Default is no-op. |
 | `send_reasoning(msg)` | Optional one-shot reasoning fallback. Default translates to `send_reasoning_delta()` + `send_reasoning_end()`. |
+
+### Optional management contract
+
+Management hooks are declared on `BaseChannel`; plugins do not need to discover
+private method names or duplicate WebUI routing logic. Most single-instance
+plugins only need `setup_spec()`:
+
+```python
+from nanobot.channels.contracts import (
+    ChannelFieldSpec,
+    ChannelSetupSpec,
+    SetupRequirement,
+)
+
+class WebhookChannel(BaseChannel):
+    @classmethod
+    def setup_spec(cls) -> ChannelSetupSpec:
+        return ChannelSetupSpec(
+            fields={
+                "token": ChannelFieldSpec(kind="secret"),
+                "region": ChannelFieldSpec(
+                    kind="enum",
+                    choices=frozenset({"us", "eu"}),
+                ),
+            },
+            required=(SetupRequirement.field("token"),),
+        )
+```
+
+`ChannelSetupSpec` is authoritative for writable field names, field types,
+choices, required setup, secret redaction, and optional backend validation.
+The settings API rejects fields outside this contract.
+
+Multi-instance plugins additionally return `ChannelInstanceSpec` objects from
+`instance_specs()` and preserve their persisted envelope in
+`update_instance_config()`. The shared contract enforces these invariants:
+
+- every `instance_id` is non-empty and unique;
+- every `runtime_name` is unique and is either the channel name or starts with
+  `<channel-name>.`;
+- runtime names cannot overwrite a runtime already owned by another channel;
+- `feature_instances()` returns `None` or a list of dictionaries. Instance
+  summaries should include `id`, `name`, `enabled`, and `configured`.
+
+Return a concrete iterable or generator from `instance_specs()`; nanobot
+materializes and validates it before constructing any runtime. Raise an
+exception for malformed persisted data rather than silently changing instance
+identity. Keep metadata refresh behind `refresh_feature_metadata()` so feature
+GET requests remain read-only.
 
 ### Optional (streaming)
 

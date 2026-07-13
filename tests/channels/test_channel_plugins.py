@@ -1385,8 +1385,16 @@ def test_optional_features_payload_marks_disabled_feishu_as_configured(monkeypat
             }
         }
     })
+
+    def unavailable_channel(_name):
+        raise ImportError("optional SDK unavailable")
+
     monkeypatch.setattr("nanobot.channels.registry.discover_channel_names", lambda: ["feishu"])
     monkeypatch.setattr("nanobot.channels.registry.discover_plugins", lambda: {})
+    monkeypatch.setattr(
+        "nanobot.channels.registry.load_channel_class",
+        unavailable_channel,
+    )
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
 
     payload = optional_features_payload(config=config)
@@ -1396,6 +1404,7 @@ def test_optional_features_payload_marks_disabled_feishu_as_configured(monkeypat
     assert feishu["enabled"] is False
     assert feishu["configured"] is True
     assert feishu["ready"] is False
+    assert feishu["setup"]["fields"][0]["key"] == "channels.feishu.appId"
     assert payload["enabled_count"] == 0
 
 

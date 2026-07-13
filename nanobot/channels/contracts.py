@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal
@@ -97,6 +98,16 @@ class SetupRequirement:
 
     alternatives: tuple[tuple[str, ...], ...]
 
+    @classmethod
+    def field(cls, name: str) -> "SetupRequirement":
+        """Require one field."""
+        return cls(((name,),))
+
+    @classmethod
+    def one_of(cls, *alternatives: tuple[str, ...]) -> "SetupRequirement":
+        """Require one complete alternative field group."""
+        return cls(alternatives)
+
     def is_satisfied(self, values: Any) -> bool:
         return any(
             all(channel_value_present(channel_field_value(values, field)) for field in group)
@@ -183,12 +194,9 @@ class ChannelInstanceSpec:
 
 
 def channel_runtime_name(channel_cls: type[Any], instance_id: str = "default") -> str:
-    provider = getattr(channel_cls, "runtime_name", None)
-    if callable(provider):
-        return str(provider(instance_id))
-    if instance_id not in {"", "default"}:
-        raise ValueError(f"{channel_cls.name} does not support multiple instances")
-    return str(channel_cls.name)
+    runtime_name = str(channel_cls.runtime_name(instance_id))
+    _validate_runtime_name(channel_cls, runtime_name)
+    return runtime_name
 
 
 def channel_instance_specs(
@@ -198,27 +206,32 @@ def channel_instance_specs(
     enabled_only: bool = True,
 ) -> list[ChannelInstanceSpec]:
     """Expand persisted config through a channel override or the single-instance default."""
-    provider = getattr(channel_cls, "instance_specs", None)
-    if callable(provider):
-        specs = provider(section, enabled_only=enabled_only)
-        if not all(isinstance(spec, ChannelInstanceSpec) for spec in specs):
-            raise TypeError(f"{channel_cls.__name__}.instance_specs() returned an invalid item")
-        return specs
+    raw_specs = channel_cls.instance_specs(section, enabled_only=enabled_only)
+    if not isinstance(raw_specs, Iterable):
+        raise TypeError(f"{channel_cls.__name__}.instance_specs() must return an iterable")
+    specs = list(raw_specs)
 
-    enabled = (
-        bool(section.get("enabled", False))
-        if isinstance(section, dict)
-        else bool(getattr(section, "enabled", False))
-    )
-    if enabled_only and not enabled:
-        return []
-    return [
-        ChannelInstanceSpec(
-            instance_id="default",
-            runtime_name=channel_runtime_name(channel_cls),
-            config=section,
-        )
-    ]
+    instance_ids: set[str] = set()
+    runtime_names: set[str] = set()
+    for spec in specs:
+        if not isinstance(spec, ChannelInstanceSpec):
+            raise TypeError(f"{channel_cls.__name__}.instance_specs() returned an invalid item")
+        if not isinstance(spec.instance_id, str) or not spec.instance_id.strip():
+            raise ValueError(f"{channel_cls.__name__}.instance_specs() returned an empty instance id")
+        if spec.instance_id in instance_ids:
+            raise ValueError(
+                f"{channel_cls.__name__}.instance_specs() returned duplicate instance id "
+                f"'{spec.instance_id}'"
+            )
+        _validate_runtime_name(channel_cls, spec.runtime_name)
+        if spec.runtime_name in runtime_names:
+            raise ValueError(
+                f"{channel_cls.__name__}.instance_specs() returned duplicate runtime name "
+                f"'{spec.runtime_name}'"
+            )
+        instance_ids.add(spec.instance_id)
+        runtime_names.add(spec.runtime_name)
+    return specs
 
 
 def channel_instance_config(
@@ -251,12 +264,7 @@ def channel_update_instance_config(
     *,
     instance_id: str = "default",
 ) -> dict[str, Any]:
-    provider = getattr(channel_cls, "update_instance_config", None)
-    if callable(provider):
-        return provider(section, values, instance_id=instance_id)
-    if instance_id not in {"", "default"}:
-        raise ValueError(f"{channel_cls.name} does not support multiple instances")
-    return values
+    return channel_cls.update_instance_config(section, values, instance_id=instance_id)
 
 
 def channel_set_config_enabled(
@@ -286,12 +294,13 @@ def channel_feature_instances(
     *,
     setup_spec: ChannelSetupSpec | None = None,
 ) -> list[dict[str, Any]] | None:
-    provider = getattr(channel_cls, "feature_instances", None)
-    return (
-        provider(section, setup_spec=setup_spec)
-        if callable(provider)
-        else None
-    )
+    instances = channel_cls.feature_instances(section, setup_spec=setup_spec)
+    if instances is not None and (
+        not isinstance(instances, list)
+        or any(not isinstance(instance, dict) for instance in instances)
+    ):
+        raise TypeError(f"{channel_cls.__name__}.feature_instances() must return a list of dicts or None")
+    return instances
 
 
 def refresh_channel_feature_metadata(
@@ -300,8 +309,20 @@ def refresh_channel_feature_metadata(
     *,
     instance_id: str = "default",
 ) -> bool:
-    provider = getattr(channel_cls, "refresh_feature_metadata", None)
-    return bool(provider(config_path, instance_id=instance_id)) if callable(provider) else False
+    return bool(channel_cls.refresh_feature_metadata(config_path, instance_id=instance_id))
+
+
+def _validate_runtime_name(channel_cls: type[Any], runtime_name: Any) -> None:
+    channel_name = str(channel_cls.name).strip()
+    if not channel_name:
+        raise ValueError(f"{channel_cls.__name__}.name must not be empty")
+    if not isinstance(runtime_name, str) or not runtime_name.strip():
+        raise ValueError(f"{channel_cls.__name__} returned an empty runtime name")
+    if runtime_name != channel_name and not runtime_name.startswith(f"{channel_name}."):
+        raise ValueError(
+            f"{channel_cls.__name__} runtime name '{runtime_name}' must be scoped under "
+            f"'{channel_name}'"
+        )
 
 
 def channel_field_value(values: Any, field_path: str) -> Any:

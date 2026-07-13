@@ -10,6 +10,7 @@ from nanobot.channels.contracts import (
     FieldKind,
     SetupRequirement,
 )
+from nanobot.channels.manifests import load_builtin_setup_spec
 
 
 def _field(
@@ -28,11 +29,11 @@ def _field(
 
 
 def _required(field: str) -> SetupRequirement:
-    return SetupRequirement(((field,),))
+    return SetupRequirement.field(field)
 
 
 def _one_of(*alternatives: tuple[str, ...]) -> SetupRequirement:
-    return SetupRequirement(alternatives)
+    return SetupRequirement.one_of(*alternatives)
 
 
 _GROUP_POLICIES = {"mention", "open", "allowlist"}
@@ -207,21 +208,6 @@ CHANNEL_SETUP_SPECS: dict[str, ChannelSetupSpec] = {
         required=(_required("wsUrl"),),
         official_url="https://napneko.github.io/",
     ),
-    "feishu": ChannelSetupSpec(
-        fields={
-            "appId": _field(snapshot=False),
-            "appSecret": _field("secret", snapshot=False),
-            "domain": _field("enum", choices={"feishu", "lark"}, snapshot=False),
-            "groupPolicy": _field(
-                "enum", choices=_DIRECT_GROUP_POLICIES, snapshot=False
-            ),
-            "allowFrom": _field("list", snapshot=False),
-            "topicIsolation": _field("bool", snapshot=False),
-        },
-        required=(_required("appId"), _required("appSecret")),
-        official_url="https://open.feishu.cn/app",
-        multi_instance=True,
-    ),
 }
 
 
@@ -231,18 +217,18 @@ def channel_setup_spec(
 ) -> ChannelSetupSpec | None:
     """Return a channel-owned setup contract, falling back to built-in metadata.
 
-    External channel plugins can provide ``setup_spec`` without
-    requiring a nanobot core change.  The built-in table remains a compatibility
-    fallback while built-in channels migrate to the same hook incrementally.
+    External plugins provide ``setup_spec`` on ``BaseChannel``. Built-ins use
+    dependency-free manifest modules so settings discovery never imports an
+    optional platform SDK. The table remains only as a migration fallback.
     """
     if channel_cls is not None:
-        provider = getattr(channel_cls, "setup_spec", None)
-        if callable(provider):
-            spec = provider()
-            if spec is not None:
-                if not isinstance(spec, ChannelSetupSpec):
-                    raise TypeError(
-                        f"{channel_cls.__name__}.setup_spec() must return ChannelSetupSpec or None"
-                    )
-                return spec
+        spec = channel_cls.setup_spec()
+        if spec is not None:
+            if not isinstance(spec, ChannelSetupSpec):
+                raise TypeError(
+                    f"{channel_cls.__name__}.setup_spec() must return ChannelSetupSpec or None"
+                )
+            return spec
+    if spec := load_builtin_setup_spec(name):
+        return spec
     return CHANNEL_SETUP_SPECS.get(name)

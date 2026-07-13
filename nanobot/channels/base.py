@@ -10,6 +10,11 @@ from loguru import logger
 
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
+from nanobot.channels.contracts import (
+    ChannelActivation,
+    ChannelInstanceSpec,
+    ChannelSetupSpec,
+)
 from nanobot.pairing import (
     PAIRING_CODE_META_KEY,
     format_pairing_reply,
@@ -269,6 +274,72 @@ class BaseChannel(ABC):
     def default_config(cls) -> dict[str, Any]:
         """Return default config for onboard. Override in plugins to auto-populate config.json."""
         return {"enabled": False}
+
+    @classmethod
+    def setup_spec(cls) -> ChannelSetupSpec | None:
+        """Return the optional WebUI setup contract for this channel."""
+        return None
+
+    @classmethod
+    def runtime_name(cls, instance_id: str = "default") -> str:
+        """Return the routing key for one channel instance."""
+        if instance_id not in {"", "default"}:
+            raise ValueError(f"{cls.name} does not support multiple instances")
+        return cls.name
+
+    @classmethod
+    def instance_specs(
+        cls,
+        section: Any,
+        *,
+        enabled_only: bool = True,
+    ) -> list[ChannelInstanceSpec]:
+        """Expand persisted config into independently managed runtime instances."""
+        activation = ChannelActivation.from_config(section)
+        if activation.instances is not None:
+            raise ValueError(f"{cls.name} must implement instance_specs() for multi-instance config")
+        if enabled_only and not activation.resolve():
+            return []
+        return [
+            ChannelInstanceSpec(
+                instance_id="default",
+                runtime_name=cls.runtime_name(),
+                config=section,
+            )
+        ]
+
+    @classmethod
+    def update_instance_config(
+        cls,
+        section: Any,
+        values: dict[str, Any],
+        *,
+        instance_id: str = "default",
+    ) -> dict[str, Any]:
+        """Persist editable values while preserving the channel-owned storage shape."""
+        if instance_id not in {"", "default"}:
+            raise ValueError(f"{cls.name} does not support multiple instances")
+        return values
+
+    @classmethod
+    def feature_instances(
+        cls,
+        section: Any,
+        *,
+        setup_spec: ChannelSetupSpec | None = None,
+    ) -> list[dict[str, Any]] | None:
+        """Return optional instance summaries for settings consumers."""
+        return None
+
+    @classmethod
+    def refresh_feature_metadata(
+        cls,
+        config_path: Path,
+        *,
+        instance_id: str = "default",
+    ) -> bool:
+        """Refresh persisted display metadata after an explicit settings action."""
+        return False
 
     @property
     def is_running(self) -> bool:

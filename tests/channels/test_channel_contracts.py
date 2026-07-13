@@ -12,6 +12,7 @@ from nanobot.channels.base import BaseChannel
 from nanobot.channels.contracts import (
     ChannelActivation,
     ChannelFieldSpec,
+    ChannelInstanceSpec,
     ChannelSetupSpec,
     SetupRequirement,
     channel_instance_config,
@@ -60,7 +61,7 @@ class _SetupChannel(_SingleChannel):
         )
 
 
-def test_management_contract_does_not_expand_runtime_base_class() -> None:
+def test_management_contract_is_explicit_on_runtime_base_class() -> None:
     management_hooks = {
         "feature_instances",
         "instance_specs",
@@ -70,7 +71,7 @@ def test_management_contract_does_not_expand_runtime_base_class() -> None:
         "update_instance_config",
     }
 
-    assert management_hooks.isdisjoint(BaseChannel.__dict__)
+    assert management_hooks <= BaseChannel.__dict__.keys()
 
 
 def test_contract_module_is_not_discovered_as_a_channel() -> None:
@@ -192,6 +193,58 @@ def test_channel_instance_contract_round_trip(
         updated,
         instance_id=target_id,
     )["contractMarker"] == "preserved"
+
+
+def test_channel_instance_contract_materializes_generators() -> None:
+    class _GeneratedChannel(_SingleChannel):
+        name = "generated"
+
+        @classmethod
+        def instance_specs(cls, section, *, enabled_only=True):
+            yield ChannelInstanceSpec("default", "generated", section)
+            yield ChannelInstanceSpec("product", "generated.product", section)
+
+    specs = channel_instance_specs(_GeneratedChannel, {"enabled": True})
+
+    assert [spec.instance_id for spec in specs] == ["default", "product"]
+
+
+@pytest.mark.parametrize(
+    ("specs", "message"),
+    [
+        pytest.param(
+            [ChannelInstanceSpec("default", "other", {})],
+            "must be scoped under 'invalid'",
+            id="foreign-runtime-name",
+        ),
+        pytest.param(
+            [
+                ChannelInstanceSpec("default", "invalid", {}),
+                ChannelInstanceSpec("default", "invalid.product", {}),
+            ],
+            "duplicate instance id 'default'",
+            id="duplicate-instance-id",
+        ),
+        pytest.param(
+            [
+                ChannelInstanceSpec("default", "invalid", {}),
+                ChannelInstanceSpec("product", "invalid", {}),
+            ],
+            "duplicate runtime name 'invalid'",
+            id="duplicate-runtime-name",
+        ),
+    ],
+)
+def test_channel_instance_contract_rejects_invalid_specs(specs, message) -> None:
+    class _InvalidChannel(_SingleChannel):
+        name = "invalid"
+
+        @classmethod
+        def instance_specs(cls, section, *, enabled_only=True):
+            return specs
+
+    with pytest.raises(ValueError, match=message):
+        channel_instance_specs(_InvalidChannel, {"enabled": True})
 
 
 def test_channel_setup_contract_owns_fields_and_validation() -> None:

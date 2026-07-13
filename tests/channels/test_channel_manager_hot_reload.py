@@ -55,6 +55,40 @@ class _MultiHotChannel(_HotChannel):
         ]
 
 
+class _AliasHotChannel(_HotChannel):
+    """Plugin entry-point alias that claims another channel's runtime namespace."""
+
+    name = "hot"
+    display_name = "Alias"
+
+
+def test_channel_manager_does_not_overwrite_an_owned_runtime_name(monkeypatch):
+    config = Config.model_validate({
+        "channels": {
+            "websocket": {"enabled": False},
+            "hot": {"enabled": True},
+            "alias": {"enabled": True},
+        }
+    })
+
+    import nanobot.channels.registry as registry
+
+    monkeypatch.setattr(registry, "discover_channel_names", lambda: ["hot"])
+    monkeypatch.setattr(
+        registry,
+        "discover_enabled",
+        lambda enabled_names, **_kwargs: {
+            "hot": _HotChannel,
+            "alias": _AliasHotChannel,
+        },
+    )
+
+    manager = ChannelManager(config, MessageBus())
+
+    assert set(manager.channels) == {"hot"}
+    assert type(manager.channels["hot"]) is _HotChannel
+
+
 @pytest.mark.asyncio
 async def test_apply_channel_feature_action_starts_and_stops_channel(monkeypatch):
     disabled = Config.model_validate({

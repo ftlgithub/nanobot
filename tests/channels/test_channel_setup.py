@@ -1,4 +1,4 @@
-from nanobot.channels._setup import channel_setup_spec
+from nanobot.channels._setup import CHANNEL_SETUP_SPECS, channel_setup_spec
 
 
 def test_channel_setup_spec_derives_route_and_secret_metadata() -> None:
@@ -52,3 +52,12 @@ def test_webui_forms_have_writable_mattermost_and_whatsapp_contracts() -> None:
         "enum",
         {"mention", "open"},
     )
+
+
+def test_feishu_setup_is_owned_by_dependency_free_manifest() -> None:
+    feishu = channel_setup_spec("feishu")
+
+    assert "feishu" not in CHANNEL_SETUP_SPECS
+    assert feishu is not None
+    assert feishu.multi_instance is True
+    assert feishu.simple_required_fields == ("appId", "appSecret")

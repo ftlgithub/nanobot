@@ -217,13 +217,26 @@ class ChannelManager:
             if section is None:
                 continue
             try:
-                for spec in channel_instance_specs(cls, section):
-                    self.channels[spec.runtime_name] = self._build_channel(
-                        name,
-                        cls,
-                        spec.config,
-                        runtime_name=spec.runtime_name,
+                specs = channel_instance_specs(cls, section)
+                collisions = sorted(set(self.channels) & {spec.runtime_name for spec in specs})
+                if collisions:
+                    raise ValueError(
+                        f"runtime name(s) already owned by another channel: {', '.join(collisions)}"
                     )
+                built = [
+                    (
+                        spec,
+                        self._build_channel(
+                            name,
+                            cls,
+                            spec.config,
+                            runtime_name=spec.runtime_name,
+                        ),
+                    )
+                    for spec in specs
+                ]
+                for spec, channel in built:
+                    self.channels[spec.runtime_name] = channel
                     logger.info("{} channel enabled as {}", cls.display_name, spec.runtime_name)
             except Exception as e:
                 logger.warning("{} channel not available: {}", name, e)
@@ -390,6 +403,25 @@ class ChannelManager:
                 "ok": False,
                 "requires_restart": True,
                 "message": f"{name} channel config was not enabled.",
+            }
+
+        collisions = [
+            spec.runtime_name
+            for spec in specs
+            if (
+                (current := self.channels.get(spec.runtime_name)) is not None
+                and not isinstance(current, cls)
+            )
+        ]
+        if collisions:
+            return {
+                "handled": True,
+                "ok": False,
+                "requires_restart": True,
+                "message": (
+                    "Channel runtime name(s) already owned by another channel: "
+                    + ", ".join(sorted(collisions))
+                ),
             }
 
         try:
