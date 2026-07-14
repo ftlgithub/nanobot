@@ -8,7 +8,7 @@ export type ChannelPresentation = {
   color: string;
   icon?: LucideIcon;
   logoUrl?: string;
-  setup?: ChannelSetupPresentation;
+  setup?: ChannelCatalogSetupPresentation;
 };
 export type ChannelSetupPresentation = {
   mode?: "webui" | "credentials" | "connect";
@@ -27,6 +27,8 @@ export type ChannelSetupPresentation = {
   actions?: ChannelSetupAction[];
   presets?: ChannelProviderPreset[];
 };
+
+type ChannelCatalogSetupPresentation = Omit<ChannelSetupPresentation, "officialUrl">;
 
 export type ChannelSetupAction = {
   id: string;
@@ -91,19 +93,6 @@ const QQ_MESSAGE_FORMAT_OPTIONS: ChannelConfigOption[] = [
 
 const NANOBOT_DOCS_URL = "https://nanobot.wiki/docs/latest";
 const CHAT_APPS_DOCS_URL = `${NANOBOT_DOCS_URL}/getting-started/chat-apps`;
-const SLACK_APPS_URL = "https://api.slack.com/apps";
-const TELEGRAM_BOTFATHER_URL = "https://t.me/BotFather";
-const DISCORD_DEVELOPER_URL = "https://discord.com/developers/applications";
-const GMAIL_APP_PASSWORDS_URL = "https://support.google.com/accounts/answer/185833";
-const FEISHU_OPEN_PLATFORM_URL = "https://open.feishu.cn/app";
-const DINGTALK_OPEN_PLATFORM_URL = "https://open.dingtalk.com/";
-const WECOM_DEVELOPER_URL = "https://developer.work.weixin.qq.com/";
-const QQ_OPEN_PLATFORM_URL = "https://q.qq.com/";
-const MATRIX_CLIENTS_URL = "https://matrix.org/ecosystem/clients/";
-const MATTERMOST_BOT_DOCS_URL = "https://developers.mattermost.com/integrate/reference/bot-accounts/";
-const SIGNAL_CLI_URL = "https://github.com/bbernhard/signal-cli-rest-api";
-const TEAMS_DEVELOPER_URL = "https://dev.teams.microsoft.com/apps";
-const NAPCAT_DOCS_URL = "https://napneko.github.io/";
 
 export const SLACK_SOCKET_MODE_MANIFEST = `display_information:
   name: nanobot
@@ -219,7 +208,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("telegram"),
       docsLabel: "Open Telegram setup",
-      officialUrl: TELEGRAM_BOTFATHER_URL,
       officialLabel: "Open BotFather",
       tryIt: "Send /start or a short DM to your Telegram bot.",
       summary: "Enable turns on Telegram support. Telegram still needs a BotFather token before messages can flow.",
@@ -266,7 +254,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       command: "nanobot channels login feishu",
       docsUrl: chatAppGuideUrl("feishu"),
       docsLabel: "Open Feishu setup",
-      officialUrl: FEISHU_OPEN_PLATFORM_URL,
       officialLabel: "Open Feishu console",
       tryIt: "Send a DM or mention the Feishu assistant in a group.",
       summary:
@@ -323,7 +310,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("slack"),
       docsLabel: "Open Slack setup",
-      officialUrl: SLACK_APPS_URL,
       officialLabel: "Open Slack apps",
       tryIt: "Mention the Slack app or send it a direct message.",
       actions: [
@@ -376,7 +362,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("discord"),
       docsLabel: "Open Discord setup",
-      officialUrl: DISCORD_DEVELOPER_URL,
       officialLabel: "Open Discord portal",
       tryIt: "Mention the bot in a server or send it a direct message.",
       summary: "Enable turns on Discord support. Discord still needs a bot token and server permissions.",
@@ -422,7 +407,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("email"),
       docsLabel: "Open Email setup",
-      officialUrl: GMAIL_APP_PASSWORDS_URL,
       officialLabel: "Open app password guide",
       tryIt: "Send a test email to the connected mailbox.",
       presets: EMAIL_PROVIDER_PRESETS,
@@ -538,7 +522,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("matrix"),
       docsLabel: "Open Matrix setup",
-      officialUrl: MATRIX_CLIENTS_URL,
       officialLabel: "Open Matrix clients",
       tryIt: "Invite the Matrix account into a room and send a test message.",
       summary: "Matrix needs a homeserver account and either password login or an access token.",
@@ -602,7 +585,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("mattermost"),
       docsLabel: "Open Mattermost setup",
-      officialUrl: MATTERMOST_BOT_DOCS_URL,
       officialLabel: "Open Mattermost bot guide",
       tryIt: "Mention the bot in a Mattermost channel or send it a direct message.",
       summary:
@@ -691,7 +673,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("dingtalk"),
       docsLabel: "Open DingTalk setup",
-      officialUrl: DINGTALK_OPEN_PLATFORM_URL,
       officialLabel: "Open DingTalk console",
       tryIt: "Send a test message from the DingTalk group where the app is installed.",
       summary: "DingTalk needs app credentials from Stream mode.",
@@ -734,7 +715,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("wecom"),
       docsLabel: "Open WeCom setup",
-      officialUrl: WECOM_DEVELOPER_URL,
       officialLabel: "Open WeCom console",
       tryIt: "Send a test message to the WeCom bot.",
       summary: "WeCom needs an AI bot ID and secret from the WeCom admin console.",
@@ -814,7 +794,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("qq"),
       docsLabel: "Open QQ setup",
-      officialUrl: QQ_OPEN_PLATFORM_URL,
       officialLabel: "Open QQ bot console",
       tryIt: "Send a direct or group test message from QQ.",
       summary: "QQ uses the official bot credentials and a long WebSocket connection.",
@@ -864,7 +843,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("signal"),
       docsLabel: "Open Signal setup",
-      officialUrl: SIGNAL_CLI_URL,
       officialLabel: "Open signal-cli guide",
       tryIt: "Send a Signal DM to the linked phone number.",
       summary:
@@ -921,7 +899,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("msteams"),
       docsLabel: "Open Teams setup",
-      officialUrl: TEAMS_DEVELOPER_URL,
       officialLabel: "Open Teams developer portal",
       tryIt: "Install the Teams app and send a test message.",
       summary:
@@ -978,7 +955,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
       mode: "credentials",
       docsUrl: chatAppGuideUrl("napcat"),
       docsLabel: "Open NapCat setup",
-      officialUrl: NAPCAT_DOCS_URL,
       officialLabel: "Open NapCat docs",
       tryIt: "Send a QQ test message through NapCat.",
       summary: "NapCat connects nanobot to QQ through a local or remote OneBot WebSocket endpoint.",

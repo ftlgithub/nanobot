@@ -1203,7 +1203,10 @@ describe("SettingsView Apps catalog", () => {
     expect(screen.getByRole("switch", { name: "Discord channel" })).toBeEnabled();
     expect(screen.getByText("Configured manually")).toBeInTheDocument();
     expect(screen.getByText("Saved")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Saved secret")).toHaveValue("");
+    const savedSecret = screen.getByPlaceholderText("Saved secret");
+    expect(savedSecret).toHaveValue("");
+    expect(savedSecret).toHaveAttribute("autocomplete", "off");
+    expect(savedSecret.closest("form")).not.toBeNull();
     expect(screen.queryByDisplayValue("discord-secret-token")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Advanced"));

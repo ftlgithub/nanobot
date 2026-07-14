@@ -43,6 +43,7 @@ describe("channelSetup", () => {
     }));
 
     expect(setup.officialUrl).toBe("https://plugin.example/setup");
+    expect(setup.officialLabel).toBe("Open official setup");
     expect(setup.fields).toEqual([
       expect.objectContaining({
         key: "channels.plugin-chat.apiToken",

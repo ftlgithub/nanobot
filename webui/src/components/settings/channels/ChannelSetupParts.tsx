@@ -128,6 +128,7 @@ export function ChannelOfficialLink({
   );
   const { logoUrl, onLogoError, onLogoLoad } = useLogoFallback(logoUrls);
   const Icon = presentation?.icon;
+  const initials = presentation?.initials ?? feature.display_name.slice(0, 2).toUpperCase();
   const color = presentation?.color ?? "#6B7280";
   const label = setup.officialLabel;
   if (!setup.officialUrl || !label) return null;
@@ -155,7 +156,9 @@ export function ChannelOfficialLink({
           />
         ) : Icon ? (
           <Icon className="h-3 w-3" strokeWidth={2.25} />
-        ) : null}
+        ) : (
+          <span className="text-[8px] font-bold">{initials}</span>
+        )}
       </span>
       <span className="truncate">{label}</span>
       <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />

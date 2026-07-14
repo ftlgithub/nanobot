@@ -57,7 +57,10 @@ export function channelSetup(feature: NanobotFeatureInfo): ChannelSetupPresentat
 
   return {
     ...presentation,
-    officialUrl: contract.official_url ?? presentation.officialUrl,
+    officialUrl: contract.official_url,
+    officialLabel:
+      presentation.officialLabel
+      ?? (contract.official_url ? "Open official setup" : undefined),
     fields: fields.length ? fields : undefined,
     manualFields: manual.length ? manual : undefined,
   };

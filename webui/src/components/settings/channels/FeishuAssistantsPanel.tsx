@@ -272,7 +272,13 @@ export function FeishuAssistantsPanel({
                           />
                         </span>
                       </summary>
-                      <div className="mt-3">
+                      <form
+                        className="mt-3"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void saveSelectedInstanceSettings();
+                        }}
+                      >
                         <CredentialForm
                           fields={manualFields}
                           values={fieldValues}
@@ -287,11 +293,10 @@ export function FeishuAssistantsPanel({
                         />
                         <div className="mt-3 flex justify-end">
                           <Button
-                            type="button"
+                            type="submit"
                             size="sm"
                             variant="outline"
                             className="h-8 rounded-full border-border/65 bg-background/80 px-3 text-[12px] font-semibold hover:bg-muted/70"
-                            onClick={() => void saveSelectedInstanceSettings()}
                             disabled={savingFields}
                           >
                             {savingFields ? (
@@ -300,7 +305,7 @@ export function FeishuAssistantsPanel({
                             {tx("settings.channels.saveSettings", "Save settings")}
                           </Button>
                         </div>
-                      </div>
+                      </form>
                     </details>
                   ) : null}
                 </div>

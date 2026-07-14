@@ -375,7 +375,13 @@ function ChannelSetupSurface({
     : tx("settings.channels.checkAndEnable", "Check and enable");
 
   return (
-    <div className="mt-5 overflow-hidden rounded-[16px] border border-border/70 bg-background shadow-none">
+    <form
+      className="mt-5 overflow-hidden rounded-[16px] border border-border/70 bg-background shadow-none"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (mode === "credentials") void saveCredentialSettings();
+      }}
+    >
       <section className="px-4 py-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-[13px] font-semibold text-foreground">
@@ -480,11 +486,10 @@ function ChannelSetupSurface({
             ) : null}
             <div className="mt-3 flex flex-wrap justify-end gap-2">
               <Button
-                type="button"
+                type="submit"
                 size="sm"
                 variant="outline"
                 className="h-8 rounded-full border-border/65 bg-background/80 px-3 text-[12px] font-semibold hover:bg-muted/70"
-                onClick={() => void saveCredentialSettings()}
                 disabled={saving}
               >
                 {saving || validating ? (
@@ -547,6 +552,6 @@ function ChannelSetupSurface({
           ) : null}
         </details>
       ) : null}
-    </div>
+    </form>
   );
 }
