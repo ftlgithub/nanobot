@@ -1249,6 +1249,7 @@ describe("ThreadComposer", () => {
   });
 
   it("uses the shared accent when an installed CLI app has no brand metadata", () => {
+    const mention = "@obsidian-agent-cli";
     const app: CliAppInfo = {
       name: "obsidian-agent-cli",
       display_name: "Obsidian CLI",
@@ -1275,7 +1276,7 @@ describe("ThreadComposer", () => {
 
     const input = screen.getByLabelText("Message input");
     fireEvent.change(input, {
-      target: { value: "@obsidian-agent-cli", selectionStart: 19 },
+      target: { value: mention, selectionStart: mention.length },
     });
 
     const token = screen.getByTestId("composer-cli-mention-obsidian-agent-cli");

@@ -1,16 +1,16 @@
 import type { SlashCommand } from "@/lib/types";
 
-export type ResolvedSlashCommandLifecycle =
+type ResolvedSlashCommandLifecycle =
   | "side_channel"
   | "finalize_active_turn"
   | "stop_active_turn"
   | "agent_turn";
 
-export function slashCommandName(content: string): string {
+function slashCommandName(content: string): string {
   return content.split(/\s+/, 1)[0];
 }
 
-export function slashCommandArgs(content: string, commandName: string): string {
+function slashCommandArgs(content: string, commandName: string): string {
   return content.slice(commandName.length).trim();
 }
 
