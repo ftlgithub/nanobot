@@ -738,27 +738,25 @@ def onboard(
 
 def _onboard_plugins(config_path: Path) -> None:
     """Inject default config for all discovered channels (built-in + plugins)."""
-    import json
-
     from nanobot.channels.registry import discover_all
-    from nanobot.config.loader import merge_missing_defaults
+    from nanobot.config.loader import get_config_repository, merge_missing_defaults
 
     all_channels = discover_all()
     if not all_channels:
         return
 
-    with open(config_path, encoding="utf-8") as f:
-        data = json.load(f)
+    def mutate(config: Config) -> None:
+        for name, cls in all_channels.items():
+            existing = getattr(config.channels, name, None)
+            if not isinstance(existing, dict):
+                existing = {}
+            setattr(
+                config.channels,
+                name,
+                merge_missing_defaults(existing, cls.default_config()),
+            )
 
-    channels = data.setdefault("channels", {})
-    for name, cls in all_channels.items():
-        if name not in channels:
-            channels[name] = cls.default_config()
-        else:
-            channels[name] = merge_missing_defaults(channels[name], cls.default_config())
-
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    get_config_repository(config_path).update(mutate)
 
 
 def _print_enable_options(
@@ -798,7 +796,11 @@ def _model_display(config: Config) -> tuple[str, str]:
 
 def _load_runtime_config(config: str | None = None, workspace: str | None = None) -> Config:
     """Load config and optionally override the active workspace."""
-    from nanobot.config.loader import load_config, resolve_config_env_vars, set_config_path
+    from nanobot.config.loader import (
+        apply_config_runtime_policies,
+        load_effective_config,
+        set_config_path,
+    )
 
     config_path = None
     if config:
@@ -810,13 +812,14 @@ def _load_runtime_config(config: str | None = None, workspace: str | None = None
         console.print(f"[dim]Using config: {config_path}[/dim]")
 
     try:
-        loaded = resolve_config_env_vars(load_config(config_path))
+        loaded = load_effective_config(config_path)
     except ValueError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
     _warn_deprecated_config_keys(config_path)
     if workspace:
         loaded.agents.defaults.workspace = workspace
+    apply_config_runtime_policies(loaded)
     return loaded
 
 
@@ -2688,19 +2691,21 @@ def _set_oauth_provider_as_main(
     config_path: str | None = None,
 ) -> None:
     """Persist an OAuth provider as the active agent provider."""
-    from nanobot.config.loader import get_config_path, load_config, save_config, set_config_path
+    from nanobot.config.loader import get_config_path, set_config_path, update_config
 
     resolved_config_path = Path(config_path).expanduser().resolve() if config_path else None
     if resolved_config_path is not None:
         set_config_path(resolved_config_path)
         console.print(f"[dim]Using config: {resolved_config_path}[/dim]")
 
-    config = load_config(resolved_config_path)
     selected_model = (model or "").strip() or _OAUTH_PROVIDER_DEFAULT_MODELS[provider_name]
-    config.agents.defaults.model_preset = None
-    config.agents.defaults.provider = provider_name
-    config.agents.defaults.model = selected_model
-    save_config(config, resolved_config_path)
+
+    def mutate(config: Config) -> None:
+        config.agents.defaults.model_preset = None
+        config.agents.defaults.provider = provider_name
+        config.agents.defaults.model = selected_model
+
+    update_config(mutate, resolved_config_path)
 
     saved_path = resolved_config_path or get_config_path()
     console.print(

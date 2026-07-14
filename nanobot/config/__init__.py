@@ -1,6 +1,13 @@
 """Configuration module for nanobot."""
 
-from nanobot.config.loader import get_config_path, load_config
+from nanobot.config.loader import (
+    apply_config_runtime_policies,
+    get_config_path,
+    get_config_repository,
+    load_config,
+    load_effective_config,
+    update_config,
+)
 from nanobot.config.paths import (
     get_cli_history_path,
     get_cron_dir,
@@ -13,12 +20,28 @@ from nanobot.config.paths import (
     get_workspace_path,
     is_default_workspace,
 )
+from nanobot.config.repository import (
+    ConfigCommit,
+    ConfigConflictError,
+    EffectiveConfigSnapshot,
+    FileConfigRepository,
+    PersistedConfigSnapshot,
+)
 from nanobot.config.schema import Config
 
 __all__ = [
     "Config",
+    "ConfigCommit",
+    "ConfigConflictError",
+    "EffectiveConfigSnapshot",
+    "FileConfigRepository",
+    "PersistedConfigSnapshot",
+    "apply_config_runtime_policies",
     "load_config",
+    "load_effective_config",
+    "update_config",
     "get_config_path",
+    "get_config_repository",
     "get_data_dir",
     "get_runtime_subdir",
     "get_media_dir",

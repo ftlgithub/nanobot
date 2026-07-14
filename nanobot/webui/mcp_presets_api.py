@@ -18,9 +18,9 @@ from typing import Any, Literal, Mapping
 
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.apps.protocol import app_manifest, compact_dict
-from nanobot.config.loader import load_config, resolve_config_env_vars, save_config
+from nanobot.config.loader import load_config, resolve_config_env_vars, update_config
 from nanobot.config.paths import get_runtime_subdir
-from nanobot.config.schema import MCPServerConfig
+from nanobot.config.schema import Config, MCPServerConfig
 from nanobot.utils.helpers import ensure_dir
 
 QueryParams = dict[str, list[str]]
@@ -1180,19 +1180,16 @@ def _import_mcp_servers(raw_json: str | None) -> dict[str, MCPServerConfig]:
 
 
 def custom_mcp_action(action: str, query: QueryParams) -> dict[str, Any]:
-    config = load_config()
     if action == "custom":
         name, cfg = _custom_server_from_query(query)
-        config.tools.mcp_servers[name] = cfg
-        save_config(config)
+        update_config(lambda config: config.tools.mcp_servers.__setitem__(name, cfg))
         payload = mcp_presets_payload(last_action=_server_action_message(action, name))
         payload["requires_restart"] = True
         return payload
 
     if action in {"import", "import-cursor"}:
         servers = _import_mcp_servers(_query_first(query, "config"))
-        config.tools.mcp_servers.update(servers)
-        save_config(config)
+        update_config(lambda config: config.tools.mcp_servers.update(servers))
         payload = mcp_presets_payload(last_action={
             "ok": True,
             "message": f"Imported {len(servers)} MCP server(s).",
@@ -1202,12 +1199,15 @@ def custom_mcp_action(action: str, query: QueryParams) -> dict[str, Any]:
 
     if action == "tools":
         name = _validated_server_name((_query_first(query, "name") or "").strip())
-        cfg = config.tools.mcp_servers.get(name)
-        if cfg is None:
-            raise McpPresetError("unknown MCP server", status=404)
-        cfg.enabled_tools = _parse_enabled_tools(_query_first(query, "enabled_tools"))
-        config.tools.mcp_servers[name] = cfg
-        save_config(config)
+
+        def mutate(config: Config) -> None:
+            cfg = config.tools.mcp_servers.get(name)
+            if cfg is None:
+                raise McpPresetError("unknown MCP server", status=404)
+            cfg.enabled_tools = _parse_enabled_tools(_query_first(query, "enabled_tools"))
+            config.tools.mcp_servers[name] = cfg
+
+        update_config(mutate)
         payload = mcp_presets_payload(last_action=_server_action_message(action, name))
         payload["requires_restart"] = True
         return payload
@@ -1221,31 +1221,42 @@ def mcp_presets_action(action: str, query: QueryParams) -> dict[str, Any]:
         raise McpPresetError("missing MCP preset name")
     preset = _preset_by_name_optional(name)
 
-    config = load_config()
-    existing = config.tools.mcp_servers.get(name)
-
     if action == "enable":
         if preset is None:
             raise McpPresetError("unknown MCP preset", status=404)
-        config.tools.mcp_servers[preset.name] = _materialize_server(preset, query, existing)
-        save_config(config)
+
+        def mutate(config: Config) -> None:
+            existing = config.tools.mcp_servers.get(name)
+            config.tools.mcp_servers[preset.name] = _materialize_server(
+                preset,
+                query,
+                existing,
+            )
+
+        update_config(mutate)
         payload = mcp_presets_payload(last_action=_action_message(action, preset))
         payload["requires_restart"] = True
         return payload
 
     if action == "remove":
-        if preset is None and name not in config.tools.mcp_servers:
-            raise McpPresetError("unknown MCP server", status=404)
         removed_runtime_files = False
         cleanup_error = ""
-        if name in config.tools.mcp_servers:
-            existing_cfg = config.tools.mcp_servers[name]
+        removed: dict[str, MCPServerConfig] = {}
+
+        def mutate(config: Config) -> None:
+            existing_cfg = config.tools.mcp_servers.get(name)
+            if preset is None and existing_cfg is None:
+                raise McpPresetError("unknown MCP server", status=404)
+            if existing_cfg is not None:
+                removed[name] = existing_cfg
+                del config.tools.mcp_servers[name]
+
+        update_config(mutate)
+        if existing_cfg := removed.get(name):
             try:
                 removed_runtime_files = _remove_managed_stdio_cwd(name, existing_cfg)
             except OSError as exc:
                 cleanup_error = str(exc)
-            del config.tools.mcp_servers[name]
-            save_config(config)
         last_action = (
             _action_message(action, preset)
             if preset is not None

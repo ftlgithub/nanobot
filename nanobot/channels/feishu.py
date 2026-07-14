@@ -626,38 +626,44 @@ def sync_saved_feishu_identity_boundary(
     if not current_identity_key:
         return False
 
-    from nanobot.config.loader import load_config, save_config
-
-    full_config = load_config()
-    feishu_cfg = getattr(full_config.channels, "feishu", None) or {}
-    if not isinstance(feishu_cfg, dict):
-        feishu_cfg = {}
+    from nanobot.config.loader import update_config
 
     defaults = FeishuChannel.default_config()
-    previous_identity_key = ""
-    for spec in feishu_instance_specs(feishu_cfg, defaults):
-        if spec.instance_id == instance_id:
-            previous_identity_key = str(
-                spec.config.get("identityKey") or spec.config.get("identity_key") or ""
-            )
-            break
+    access_cleared = False
 
-    access_cleared = bool(previous_identity_key and previous_identity_key != current_identity_key)
-    values: dict[str, Any] = {"identityKey": current_identity_key}
-    if access_cleared:
-        values["allowFrom"] = []
-        values["allow_from"] = []
-        clear_channel(runtime_channel_name("feishu", instance_id))
+    def mutate(full_config: Any) -> None:
+        nonlocal access_cleared
+        feishu_cfg = getattr(full_config.channels, "feishu", None) or {}
+        if not isinstance(feishu_cfg, dict):
+            feishu_cfg = {}
 
-    if not previous_identity_key or access_cleared:
-        feishu_cfg = update_feishu_instance_preserving_shape(
-            feishu_cfg,
-            defaults,
-            instance_id,
-            values,
+        previous_identity_key = ""
+        for spec in feishu_instance_specs(feishu_cfg, defaults):
+            if spec.instance_id == instance_id:
+                previous_identity_key = str(
+                    spec.config.get("identityKey") or spec.config.get("identity_key") or ""
+                )
+                break
+
+        access_cleared = bool(
+            previous_identity_key and previous_identity_key != current_identity_key
         )
-        setattr(full_config.channels, "feishu", feishu_cfg)
-        save_config(full_config)
+        values: dict[str, Any] = {"identityKey": current_identity_key}
+        if access_cleared:
+            values["allowFrom"] = []
+            values["allow_from"] = []
+
+        if not previous_identity_key or access_cleared:
+            full_config.channels.feishu = update_feishu_instance_preserving_shape(
+                feishu_cfg,
+                defaults,
+                instance_id,
+                values,
+            )
+
+    update_config(mutate)
+    if access_cleared:
+        clear_channel(runtime_channel_name("feishu", instance_id))
 
     return access_cleared
 
@@ -669,19 +675,13 @@ def save_registration_result(
     name: str | None = None,
 ) -> None:
     """Persist a successful Feishu/Lark registration result to config.json."""
-    from nanobot.config.loader import load_config, save_config
+    from nanobot.config.loader import update_config
 
-    full_config = load_config()
-    feishu_cfg = getattr(full_config.channels, "feishu", None) or {}
-    if not isinstance(feishu_cfg, dict):
-        feishu_cfg = {}
     defaults = FeishuChannel.default_config()
     app_id = str(result["app_id"]).strip()
     domain = str(result.get("domain", "feishu") or "feishu").strip().lower()
     domain = "lark" if domain == "lark" else "feishu"
-    previous_identity_key = _saved_feishu_instance_identity_key(feishu_cfg, defaults, instance_id)
     next_identity_key = _feishu_app_identity_key(app_id, domain)
-    identity_changed = bool(previous_identity_key and previous_identity_key != next_identity_key)
     identity: dict[str, str] = {}
     with suppress(Exception):
         identity = fetch_feishu_app_identity(
@@ -698,18 +698,35 @@ def save_registration_result(
         "enabled": True,
         **identity,
     }
+    identity_changed = False
+
+    def mutate(full_config: Any) -> None:
+        nonlocal identity_changed
+        feishu_cfg = getattr(full_config.channels, "feishu", None) or {}
+        if not isinstance(feishu_cfg, dict):
+            feishu_cfg = {}
+        previous_identity_key = _saved_feishu_instance_identity_key(
+            feishu_cfg,
+            defaults,
+            instance_id,
+        )
+        identity_changed = bool(
+            previous_identity_key and previous_identity_key != next_identity_key
+        )
+        next_values = dict(values)
+        if identity_changed:
+            next_values["allowFrom"] = []
+            next_values["allow_from"] = []
+        full_config.channels.feishu = upsert_feishu_instance(
+            feishu_cfg,
+            defaults,
+            instance_id,
+            next_values,
+        )
+
+    update_config(mutate)
     if identity_changed:
-        values["allowFrom"] = []
-        values["allow_from"] = []
         clear_channel(runtime_channel_name("feishu", instance_id))
-    feishu_cfg = upsert_feishu_instance(
-        feishu_cfg,
-        defaults,
-        instance_id,
-        values,
-    )
-    setattr(full_config.channels, "feishu", feishu_cfg)
-    save_config(full_config)
 
 
 def refresh_saved_feishu_identities(config: Any | None = None) -> bool:
@@ -723,13 +740,13 @@ def refresh_saved_feishu_identities(config: Any | None = None) -> bool:
     if not FEISHU_AVAILABLE:
         return False
 
-    from nanobot.config.loader import load_config, save_config
+    from nanobot.config.loader import load_config, update_config
 
-    full_config = config or load_config()
-    feishu_cfg = getattr(full_config.channels, "feishu", None)
+    source_config = config or load_config()
+    feishu_cfg = getattr(source_config.channels, "feishu", None)
     defaults = FeishuChannel.default_config()
     specs = feishu_instance_specs(feishu_cfg, defaults)
-    updated = False
+    fetched: dict[str, tuple[tuple[str, str, str], dict[str, str]]] = {}
 
     for spec in specs:
         instance = spec.config
@@ -753,20 +770,50 @@ def refresh_saved_feishu_identities(config: Any | None = None) -> bool:
         if not identity:
             identity = {"identityFetchedAt": _identity_timestamp()}
 
-        feishu_cfg = update_feishu_instance_preserving_shape(
-            feishu_cfg,
-            defaults,
-            spec.instance_id,
+        fetched[spec.instance_id] = (
+            (app_id, app_secret, str(instance.get("domain") or "feishu")),
             identity,
         )
-        updated = True
 
-    if not updated:
+    if not fetched:
         return False
 
-    setattr(full_config.channels, "feishu", feishu_cfg)
-    save_config(full_config)
-    return True
+    updated = False
+
+    def mutate(full_config: Any) -> None:
+        nonlocal updated
+        current_cfg = getattr(full_config.channels, "feishu", None)
+        for spec in feishu_instance_specs(current_cfg, defaults):
+            fetched_entry = fetched.get(spec.instance_id)
+            if fetched_entry is None:
+                continue
+            expected_credentials, identity = fetched_entry
+            instance = spec.config
+            current_credentials = (
+                str(instance.get("appId") or instance.get("app_id") or "").strip(),
+                str(instance.get("appSecret") or instance.get("app_secret") or "").strip(),
+                str(instance.get("domain") or "feishu"),
+            )
+            if current_credentials != expected_credentials:
+                continue
+            if (
+                instance.get("displayName")
+                or instance.get("avatarUrl")
+                or instance.get("identityFetchedAt")
+            ):
+                continue
+            current_cfg = update_feishu_instance_preserving_shape(
+                current_cfg,
+                defaults,
+                spec.instance_id,
+                identity,
+            )
+            updated = True
+        if updated:
+            full_config.channels.feishu = current_cfg
+
+    update_config(mutate)
+    return updated
 
 
 def qr_register(

@@ -95,7 +95,10 @@ class Nanobot:
             model: Override the instance default model.
             model_preset: Override the instance default model preset.
         """
-        from nanobot.config.loader import load_config, resolve_config_env_vars
+        from nanobot.config.loader import (
+            apply_config_runtime_policies,
+            load_effective_config,
+        )
 
         ensure_single_model_selector(model=model, model_preset=model_preset)
         resolved: Path | None = None
@@ -104,7 +107,7 @@ class Nanobot:
             if not resolved.exists():
                 raise FileNotFoundError(f"Config not found: {resolved}")
 
-        config: Config = resolve_config_env_vars(load_config(resolved))
+        config: Config = load_effective_config(resolved)
         if workspace is not None:
             config.agents.defaults.workspace = str(
                 Path(workspace).expanduser().resolve()
@@ -115,6 +118,8 @@ class Nanobot:
             config.agents.defaults.provider = "auto"
         elif model_preset is not None:
             config.agents.defaults.model_preset = model_preset
+
+        apply_config_runtime_policies(config)
 
         loop = AgentLoop.from_config(
             config,

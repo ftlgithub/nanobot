@@ -27,3 +27,9 @@ A bugfix should make the protected invariant clear, change the smallest surface 
 ## Explicit over magical
 
 Configuration must be declared explicitly in `config/schema.py` Pydantic models. Error handling should raise clear exceptions rather than silently correcting bad input. Provider auto-detection exists, but every resolution path must be traceable from the factory to the concrete provider class.
+
+## Configuration has an explicit owner
+
+`FileConfigRepository` owns config-file reads, validation, revisions, and atomic writes. Runtime code may use the compatibility helpers in `config/loader.py`, but new components with an explicit config path should keep their own repository instance instead of importing a mutable global config object.
+
+Persisted and runtime views are separate: `load_raw()` preserves `${VAR}` references for editing, while `load_effective()` returns an isolated snapshot with references resolved. Read-modify-write flows must use `update()` / `update_config()` so a stale object cannot silently overwrite a newer change. Loading config is side-effect free; process-wide policies are applied explicitly during runtime startup.

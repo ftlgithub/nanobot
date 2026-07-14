@@ -20,6 +20,14 @@ def test_load_config_invalid_json_fails_fast(tmp_path) -> None:
         load_config(config_path)
 
 
+def test_load_config_rejects_non_object_root(tmp_path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="config root must be a JSON object"):
+        load_config(config_path)
+
+
 def test_load_config_invalid_schema_fails_fast(tmp_path) -> None:
     config_path = tmp_path / "config.json"
     config_path.write_text(

@@ -16,7 +16,7 @@ Shell execution (`ExecTool`, `agent/tools/shell.py`) also respects `restrict_to_
 
 All outbound HTTP requests from agent tools must pass through `validate_url_target` (`security/network.py`). By default it blocks loopback, RFC1918 private addresses, CGNAT ranges, link-local ranges, and cloud metadata endpoints (including `169.254.169.254`).
 
-The only escape hatch is `configure_ssrf_whitelist(cidrs)`, which reads from `config.tools.ssrf_whitelist` at load time.
+The only escape hatch is `configure_ssrf_whitelist(cidrs)`. Runtime entry points explicitly apply `config.tools.ssrf_whitelist` after loading the effective config; ordinary config reads must not mutate this process-wide policy.
 
 HTTP/SSE MCP transports are part of this boundary: validate configured MCP URLs before probing or constructing clients, and validate each outgoing HTTP request before redirects are followed. Local/private HTTP MCP endpoints are allowed only through the explicit SSRF whitelist. Stdio MCP servers are not part of the HTTP SSRF path.
 

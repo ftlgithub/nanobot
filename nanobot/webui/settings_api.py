@@ -22,8 +22,13 @@ from nanobot.audio.transcription_registry import (
     resolve_transcription_provider,
     transcription_provider_names,
 )
-from nanobot.config.loader import get_config_path, load_config, resolve_config_env_vars, save_config
-from nanobot.config.schema import ModelPresetConfig, ProviderConfig
+from nanobot.config.loader import (
+    get_config_path,
+    load_config,
+    resolve_config_env_vars,
+    update_config,
+)
+from nanobot.config.schema import Config, ModelPresetConfig, ProviderConfig
 from nanobot.providers.image_generation import (
     get_image_gen_provider,
     image_gen_provider_names,
@@ -961,100 +966,86 @@ def settings_usage_payload() -> dict[str, Any]:
 
 
 def update_agent_settings(query: QueryParams) -> dict[str, Any]:
-    config = load_config()
-    defaults = config.agents.defaults
-    changed = False
     restart_required = False
 
-    if "model_preset" in query or "modelPreset" in query:
-        preset = (_query_first_alias(query, "model_preset", "modelPreset") or "").strip()
-        preset_value = None if not preset or preset == "default" else preset
-        if preset_value is not None and preset_value not in config.model_presets:
-            raise WebUISettingsError("unknown model preset")
-        if defaults.model_preset != preset_value:
+    def mutate(config: Config) -> None:
+        nonlocal restart_required
+        defaults = config.agents.defaults
+
+        if "model_preset" in query or "modelPreset" in query:
+            preset = (_query_first_alias(query, "model_preset", "modelPreset") or "").strip()
+            preset_value = None if not preset or preset == "default" else preset
+            if preset_value is not None and preset_value not in config.model_presets:
+                raise WebUISettingsError("unknown model preset")
             defaults.model_preset = preset_value
-            changed = True
 
-    model = _query_first(query, "model")
-    if model is not None:
-        model = model.strip()
-        if not model:
-            raise WebUISettingsError("model is required")
-        if defaults.model != model:
+        model = _query_first(query, "model")
+        if model is not None:
+            model = model.strip()
+            if not model:
+                raise WebUISettingsError("model is required")
             defaults.model = model
-            changed = True
 
-    provider = _query_first(query, "provider")
-    if provider is not None:
-        provider = provider.strip()
-        if not provider:
-            raise WebUISettingsError("provider is required")
-        _validate_configured_provider(config, provider)
-        if defaults.provider != provider:
+        provider = _query_first(query, "provider")
+        if provider is not None:
+            provider = provider.strip()
+            if not provider:
+                raise WebUISettingsError("provider is required")
+            _validate_configured_provider(config, provider)
             defaults.provider = provider
-            changed = True
 
-    context_window_tokens = _parse_context_window_tokens(
-        _query_first_alias(query, "context_window_tokens", "contextWindowTokens")
-    )
-    if (
-        context_window_tokens is not None
-        and defaults.context_window_tokens != context_window_tokens
-    ):
-        defaults.context_window_tokens = context_window_tokens
-        changed = True
+        context_window_tokens = _parse_context_window_tokens(
+            _query_first_alias(query, "context_window_tokens", "contextWindowTokens")
+        )
+        if context_window_tokens is not None:
+            defaults.context_window_tokens = context_window_tokens
 
-    timezone = _query_first(query, "timezone")
-    if timezone is not None:
-        timezone = timezone.strip()
-        if not timezone:
-            raise WebUISettingsError("timezone is required")
-        try:
-            ZoneInfo(timezone)
-        except Exception:
-            raise WebUISettingsError("invalid timezone") from None
-        if defaults.timezone != timezone:
-            defaults.timezone = timezone
-            changed = True
-            restart_required = True
+        timezone = _query_first(query, "timezone")
+        if timezone is not None:
+            timezone = timezone.strip()
+            if not timezone:
+                raise WebUISettingsError("timezone is required")
+            try:
+                ZoneInfo(timezone)
+            except Exception:
+                raise WebUISettingsError("invalid timezone") from None
+            if defaults.timezone != timezone:
+                defaults.timezone = timezone
+                restart_required = True
 
-    bot_name = _query_first_alias(query, "bot_name", "botName")
-    if bot_name is not None:
-        bot_name = bot_name.strip()
-        if not bot_name:
-            raise WebUISettingsError("bot_name is required")
-        if defaults.bot_name != bot_name:
-            defaults.bot_name = bot_name
-            changed = True
-            restart_required = True
+        bot_name = _query_first_alias(query, "bot_name", "botName")
+        if bot_name is not None:
+            bot_name = bot_name.strip()
+            if not bot_name:
+                raise WebUISettingsError("bot_name is required")
+            if defaults.bot_name != bot_name:
+                defaults.bot_name = bot_name
+                restart_required = True
 
-    bot_icon = _query_first_alias(query, "bot_icon", "botIcon")
-    if bot_icon is not None:
-        bot_icon = bot_icon.strip()
-        if defaults.bot_icon != bot_icon:
-            defaults.bot_icon = bot_icon
-            changed = True
-            restart_required = True
+        bot_icon = _query_first_alias(query, "bot_icon", "botIcon")
+        if bot_icon is not None:
+            bot_icon = bot_icon.strip()
+            if defaults.bot_icon != bot_icon:
+                defaults.bot_icon = bot_icon
+                restart_required = True
 
-    tool_hint_max_length = _query_first_alias(
-        query,
-        "tool_hint_max_length",
-        "toolHintMaxLength",
-    )
-    if tool_hint_max_length is not None:
-        try:
-            parsed = int(tool_hint_max_length)
-        except ValueError:
-            raise WebUISettingsError("tool_hint_max_length must be an integer") from None
-        if parsed < 20 or parsed > 500:
-            raise WebUISettingsError("tool_hint_max_length must be between 20 and 500")
-        if defaults.tool_hint_max_length != parsed:
-            defaults.tool_hint_max_length = parsed
-            changed = True
-            restart_required = True
+        tool_hint_max_length = _query_first_alias(
+            query,
+            "tool_hint_max_length",
+            "toolHintMaxLength",
+        )
+        if tool_hint_max_length is not None:
+            try:
+                parsed = int(tool_hint_max_length)
+            except ValueError:
+                raise WebUISettingsError("tool_hint_max_length must be an integer") from None
+            if parsed < 20 or parsed > 500:
+                raise WebUISettingsError("tool_hint_max_length must be between 20 and 500")
+            if defaults.tool_hint_max_length != parsed:
+                defaults.tool_hint_max_length = parsed
+                restart_required = True
 
-    if changed:
-        save_config(config)
+    update_config(mutate)
     return settings_payload(requires_restart=restart_required)
 
 
@@ -1072,23 +1063,23 @@ def create_model_configuration(query: QueryParams) -> dict[str, Any]:
         raise WebUISettingsError("provider is required")
 
     name = _model_configuration_slug(raw_name or label)
-    config = load_config()
-    if name in config.model_presets:
-        raise WebUISettingsError("configuration already exists", status=409)
-    _validate_configured_provider(config, provider)
+    def mutate(config: Config) -> None:
+        if name in config.model_presets:
+            raise WebUISettingsError("configuration already exists", status=409)
+        _validate_configured_provider(config, provider)
+        base = config.resolve_default_preset()
+        config.model_presets[name] = ModelPresetConfig(
+            label=label,
+            model=model,
+            provider=provider,
+            max_tokens=base.max_tokens,
+            context_window_tokens=base.context_window_tokens,
+            temperature=base.temperature,
+            reasoning_effort=base.reasoning_effort,
+        )
+        config.agents.defaults.model_preset = name
 
-    base = config.resolve_default_preset()
-    config.model_presets[name] = ModelPresetConfig(
-        label=label,
-        model=model,
-        provider=provider,
-        max_tokens=base.max_tokens,
-        context_window_tokens=base.context_window_tokens,
-        temperature=base.temperature,
-        reasoning_effort=base.reasoning_effort,
-    )
-    config.agents.defaults.model_preset = name
-    save_config(config)
+    update_config(mutate)
     return settings_payload()
 
 
@@ -1097,56 +1088,41 @@ def update_model_configuration(query: QueryParams) -> dict[str, Any]:
     if not name or name == "default":
         raise WebUISettingsError("model configuration is required")
 
-    config = load_config()
-    preset = config.model_presets.get(name)
-    if preset is None:
-        raise WebUISettingsError("unknown model configuration")
+    def mutate(config: Config) -> None:
+        preset = config.model_presets.get(name)
+        if preset is None:
+            raise WebUISettingsError("unknown model configuration")
 
-    changed = False
-    label = _query_first_alias(query, "label", "displayName")
-    if label is not None:
-        label = label.strip()
-        if not label:
-            raise WebUISettingsError("label is required")
-        if preset.label != label:
+        label = _query_first_alias(query, "label", "displayName")
+        if label is not None:
+            label = label.strip()
+            if not label:
+                raise WebUISettingsError("label is required")
             preset.label = label
-            changed = True
 
-    model = _query_first(query, "model")
-    if model is not None:
-        model = model.strip()
-        if not model:
-            raise WebUISettingsError("model is required")
-        if preset.model != model:
+        model = _query_first(query, "model")
+        if model is not None:
+            model = model.strip()
+            if not model:
+                raise WebUISettingsError("model is required")
             preset.model = model
-            changed = True
 
-    provider = _query_first(query, "provider")
-    if provider is not None:
-        provider = provider.strip()
-        if not provider:
-            raise WebUISettingsError("provider is required")
-        _validate_configured_provider(config, provider)
-        if preset.provider != provider:
+        provider = _query_first(query, "provider")
+        if provider is not None:
+            provider = provider.strip()
+            if not provider:
+                raise WebUISettingsError("provider is required")
+            _validate_configured_provider(config, provider)
             preset.provider = provider
-            changed = True
 
-    context_window_tokens = _parse_context_window_tokens(
-        _query_first_alias(query, "context_window_tokens", "contextWindowTokens")
-    )
-    if (
-        context_window_tokens is not None
-        and preset.context_window_tokens != context_window_tokens
-    ):
-        preset.context_window_tokens = context_window_tokens
-        changed = True
-
-    if config.agents.defaults.model_preset != name:
+        context_window_tokens = _parse_context_window_tokens(
+            _query_first_alias(query, "context_window_tokens", "contextWindowTokens")
+        )
+        if context_window_tokens is not None:
+            preset.context_window_tokens = context_window_tokens
         config.agents.defaults.model_preset = name
-        changed = True
 
-    if changed:
-        save_config(config)
+    update_config(mutate)
     return settings_payload()
 
 
@@ -1155,43 +1131,37 @@ def update_provider_settings(query: QueryParams) -> dict[str, Any]:
     if not provider_name:
         raise WebUISettingsError("provider is required")
 
-    config = load_config()
-    resolved_provider = _resolve_settings_provider(config, provider_name)
-    if resolved_provider is None:
-        raise WebUISettingsError("unknown provider")
-    spec, provider_key, provider_config = resolved_provider
-    if spec.is_oauth:
-        raise WebUISettingsError("unknown provider")
+    provider_key = ""
 
-    changed = False
-    if "api_key" in query or "apiKey" in query:
-        api_key = _query_first_alias(query, "api_key", "apiKey")
-        api_key = (api_key or "").strip() or None
-        if provider_config.api_key != api_key:
-            provider_config.api_key = api_key
-            changed = True
+    def mutate(config: Config) -> None:
+        nonlocal provider_key
+        resolved_provider = _resolve_settings_provider(config, provider_name)
+        if resolved_provider is None:
+            raise WebUISettingsError("unknown provider")
+        spec, provider_key, provider_config = resolved_provider
+        if spec.is_oauth:
+            raise WebUISettingsError("unknown provider")
 
-    if "api_base" in query or "apiBase" in query:
-        api_base = _query_first_alias(query, "api_base", "apiBase")
-        api_base = (api_base or "").strip() or None
-        if provider_config.api_base != api_base:
-            provider_config.api_base = api_base
-            changed = True
+        if "api_key" in query or "apiKey" in query:
+            api_key = _query_first_alias(query, "api_key", "apiKey")
+            provider_config.api_key = (api_key or "").strip() or None
 
-    if "api_type" in query:
-        if spec.name == "openai":
+        if "api_base" in query or "apiBase" in query:
+            api_base = _query_first_alias(query, "api_base", "apiBase")
+            provider_config.api_base = (api_base or "").strip() or None
+
+        if "api_type" in query and spec.name == "openai":
             api_type = (_query_first(query, "api_type") or "").strip()
             try:
-                parsed_api_type = type(provider_config)(api_type=api_type).api_type
+                provider_config.api_type = type(provider_config)(api_type=api_type).api_type
             except Exception:
-                raise WebUISettingsError("api_type must be auto, chat_completions, or responses") from None
-            if provider_config.api_type != parsed_api_type:
-                provider_config.api_type = parsed_api_type
-                changed = True
+                raise WebUISettingsError(
+                    "api_type must be auto, chat_completions, or responses"
+                ) from None
 
-    if changed:
-        save_config(config)
-    image_config = config.tools.image_generation
+    commit = update_config(mutate)
+    changed = bool(commit.changed_paths)
+    image_config = commit.after.config.tools.image_generation
     restart_required = (
         changed
         and image_config.enabled
@@ -1299,16 +1269,18 @@ def update_network_safety_settings(query: QueryParams) -> dict[str, Any]:
     if raw_allow is None and raw_default_access_mode is None:
         raise WebUISettingsError("webui_allow_local_service_access or webui_default_access_mode is required")
 
-    config = load_config()
-    changed = False
     if raw_allow is not None:
         webui_allow_local_service_access = _parse_bool(raw_allow, "webui_allow_local_service_access")
-        if config.tools.webui_allow_local_service_access != webui_allow_local_service_access:
-            config.tools.webui_allow_local_service_access = webui_allow_local_service_access
-            changed = True
-
-    if changed:
-        save_config(config)
+        commit = update_config(
+            lambda config: setattr(
+                config.tools,
+                "webui_allow_local_service_access",
+                webui_allow_local_service_access,
+            )
+        )
+        changed = bool(commit.changed_paths)
+    else:
+        changed = False
     if raw_default_access_mode is not None:
         default_access_mode = raw_default_access_mode.strip().lower()
         if default_access_mode == "restricted":
@@ -1328,134 +1300,120 @@ def update_web_search_settings(query: QueryParams) -> dict[str, Any]:
     if provider_option is None:
         raise WebUISettingsError("unknown web search provider")
 
-    config = load_config()
-    search_config = config.tools.web.search
-    web_config = config.tools.web
-    previous_provider = search_config.provider
-    changed = False
     restart_required = False
 
-    def set_search_value(attr: str, value: object) -> None:
-        nonlocal changed
-        if getattr(search_config, attr) != value:
-            setattr(search_config, attr, value)
-            changed = True
-
-    def set_fetch_value(attr: str, value: object) -> None:
-        nonlocal changed
-        if getattr(web_config.fetch, attr) != value:
-            setattr(web_config.fetch, attr, value)
-            changed = True
-
-    if search_config.provider != provider_name:
+    def mutate(config: Config) -> None:
+        nonlocal restart_required
+        search_config = config.tools.web.search
+        web_config = config.tools.web
+        previous_provider = search_config.provider
         search_config.provider = provider_name
-        changed = True
 
-    credential = provider_option["credential"]
-    if credential == "none":
-        set_search_value("api_key", "")
-        set_search_value("base_url", "")
-    elif credential == "base_url":
-        base_url = _query_first_alias(query, "base_url", "baseUrl")
-        base_url = base_url.strip() if base_url is not None else None
-        if not base_url and previous_provider == provider_name and search_config.base_url:
-            base_url = search_config.base_url
-        if not base_url:
-            raise WebUISettingsError("base_url is required")
-        set_search_value("base_url", base_url)
-        set_search_value("api_key", "")
-    elif credential in {"api_key", "optional_api_key"}:
-        raw_api_key = _query_first_alias(query, "api_key", "apiKey")
-        api_key = raw_api_key.strip() if raw_api_key is not None else None
-        if api_key is None and previous_provider == provider_name and search_config.api_key:
-            api_key = search_config.api_key
-        if credential == "api_key" and not api_key:
-            raise WebUISettingsError("api_key is required")
-        set_search_value("api_key", api_key or "")
-        set_search_value("base_url", "")
-    else:
-        raise WebUISettingsError("unknown web search credential type")
+        credential = provider_option["credential"]
+        if credential == "none":
+            search_config.api_key = ""
+            search_config.base_url = ""
+        elif credential == "base_url":
+            base_url = _query_first_alias(query, "base_url", "baseUrl")
+            base_url = base_url.strip() if base_url is not None else None
+            if not base_url and previous_provider == provider_name and search_config.base_url:
+                base_url = search_config.base_url
+            if not base_url:
+                raise WebUISettingsError("base_url is required")
+            search_config.base_url = base_url
+            search_config.api_key = ""
+        elif credential in {"api_key", "optional_api_key"}:
+            raw_api_key = _query_first_alias(query, "api_key", "apiKey")
+            api_key = raw_api_key.strip() if raw_api_key is not None else None
+            if api_key is None and previous_provider == provider_name and search_config.api_key:
+                api_key = search_config.api_key
+            if credential == "api_key" and not api_key:
+                raise WebUISettingsError("api_key is required")
+            search_config.api_key = api_key or ""
+            search_config.base_url = ""
+        else:
+            raise WebUISettingsError("unknown web search credential type")
 
-    max_results = _query_first_alias(query, "max_results", "maxResults")
-    if max_results is not None:
-        try:
-            parsed = int(max_results)
-        except ValueError:
-            raise WebUISettingsError("max_results must be an integer") from None
-        if parsed < 1 or parsed > 10:
-            raise WebUISettingsError("max_results must be between 1 and 10")
-        set_search_value("max_results", parsed)
+        max_results = _query_first_alias(query, "max_results", "maxResults")
+        if max_results is not None:
+            try:
+                parsed = int(max_results)
+            except ValueError:
+                raise WebUISettingsError("max_results must be an integer") from None
+            if parsed < 1 or parsed > 10:
+                raise WebUISettingsError("max_results must be between 1 and 10")
+            search_config.max_results = parsed
 
-    timeout = _query_first(query, "timeout")
-    if timeout is not None:
-        try:
-            parsed_timeout = int(timeout)
-        except ValueError:
-            raise WebUISettingsError("timeout must be an integer") from None
-        if parsed_timeout < 1 or parsed_timeout > 120:
-            raise WebUISettingsError("timeout must be between 1 and 120")
-        set_search_value("timeout", parsed_timeout)
+        timeout = _query_first(query, "timeout")
+        if timeout is not None:
+            try:
+                parsed_timeout = int(timeout)
+            except ValueError:
+                raise WebUISettingsError("timeout must be an integer") from None
+            if parsed_timeout < 1 or parsed_timeout > 120:
+                raise WebUISettingsError("timeout must be between 1 and 120")
+            search_config.timeout = parsed_timeout
 
-    use_jina_reader = _query_first_alias(query, "use_jina_reader", "useJinaReader")
-    if use_jina_reader is not None:
-        normalized = use_jina_reader.strip().lower()
-        if normalized not in {"1", "0", "true", "false", "yes", "no"}:
-            raise WebUISettingsError("use_jina_reader must be boolean")
-        previous_jina_reader = web_config.fetch.use_jina_reader
-        set_fetch_value("use_jina_reader", normalized in {"1", "true", "yes"})
-        if web_config.fetch.use_jina_reader != previous_jina_reader:
-            restart_required = True
+        use_jina_reader = _query_first_alias(query, "use_jina_reader", "useJinaReader")
+        if use_jina_reader is not None:
+            normalized = use_jina_reader.strip().lower()
+            if normalized not in {"1", "0", "true", "false", "yes", "no"}:
+                raise WebUISettingsError("use_jina_reader must be boolean")
+            enabled = normalized in {"1", "true", "yes"}
+            if web_config.fetch.use_jina_reader != enabled:
+                web_config.fetch.use_jina_reader = enabled
+                restart_required = True
 
-    if changed:
-        save_config(config)
+    update_config(mutate)
     return settings_payload(requires_restart=restart_required)
 
 
 def update_api_settings(query: QueryParams) -> dict[str, Any]:
     """Update the managed OpenAI-compatible API configuration."""
-    config = load_config()
-    api = config.api
+    def mutate(config: Config) -> None:
+        api = config.api
 
-    host = _query_first(query, "host")
-    if host is not None:
-        host = host.strip()
-        if not host:
-            raise WebUISettingsError("host is required")
-        api.host = host
+        host = _query_first(query, "host")
+        if host is not None:
+            host = host.strip()
+            if not host:
+                raise WebUISettingsError("host is required")
+            api.host = host
 
-    port = _query_first(query, "port")
-    if port is not None:
-        try:
-            parsed_port = int(port)
-        except ValueError:
-            raise WebUISettingsError("port must be an integer") from None
-        if parsed_port < 1 or parsed_port > 65535:
-            raise WebUISettingsError("port must be between 1 and 65535")
-        api.port = parsed_port
+        port = _query_first(query, "port")
+        if port is not None:
+            try:
+                parsed_port = int(port)
+            except ValueError:
+                raise WebUISettingsError("port must be an integer") from None
+            if parsed_port < 1 or parsed_port > 65535:
+                raise WebUISettingsError("port must be between 1 and 65535")
+            api.port = parsed_port
 
-    timeout = _query_first(query, "timeout")
-    if timeout is not None:
-        try:
-            parsed_timeout = float(timeout)
-        except ValueError:
-            raise WebUISettingsError("timeout must be a number") from None
-        if parsed_timeout < 1 or parsed_timeout > 3600:
-            raise WebUISettingsError("timeout must be between 1 and 3600")
-        api.timeout = parsed_timeout
+        timeout = _query_first(query, "timeout")
+        if timeout is not None:
+            try:
+                parsed_timeout = float(timeout)
+            except ValueError:
+                raise WebUISettingsError("timeout must be a number") from None
+            if parsed_timeout < 1 or parsed_timeout > 3600:
+                raise WebUISettingsError("timeout must be between 1 and 3600")
+            api.timeout = parsed_timeout
 
-    api_key = _query_first_alias(query, "api_key", "apiKey")
-    if api_key is not None:
-        api.api_key = api_key.strip()
+        api_key = _query_first_alias(query, "api_key", "apiKey")
+        if api_key is not None:
+            api.api_key = api_key.strip()
 
-    if not is_loopback_host(api.host) and not api.api_key.strip():
-        raise WebUISettingsError("an API key is required when the API is available on the network")
+        if not is_loopback_host(api.host) and not api.api_key.strip():
+            raise WebUISettingsError(
+                "an API key is required when the API is available on the network"
+            )
 
-    save_config(config)
+    update_config(mutate)
     return settings_payload()
 
 
-def update_image_generation_settings(query: QueryParams) -> dict[str, Any]:
-    config = load_config()
+def _apply_image_generation_settings(config: Config, query: QueryParams) -> bool:
     image_config = config.tools.image_generation
     changed = False
 
@@ -1547,13 +1505,21 @@ def update_image_generation_settings(query: QueryParams) -> dict[str, Any]:
         if not selected_provider or not selected_provider["configured"]:
             raise WebUISettingsError("image generation provider is not configured")
 
-    if changed:
-        save_config(config)
+    return changed
+
+
+def update_image_generation_settings(query: QueryParams) -> dict[str, Any]:
+    changed = False
+
+    def mutate(config: Config) -> None:
+        nonlocal changed
+        changed = _apply_image_generation_settings(config, query)
+
+    update_config(mutate)
     return settings_payload(requires_restart=changed)
 
 
-def update_transcription_settings(query: QueryParams) -> dict[str, Any]:
-    config = load_config()
+def _apply_transcription_settings(config: Config, query: QueryParams) -> bool:
     transcription = config.transcription
     changed = False
 
@@ -1617,6 +1583,12 @@ def update_transcription_settings(query: QueryParams) -> dict[str, Any]:
             transcription.max_upload_mb = parsed_upload
             changed = True
 
-    if changed:
-        save_config(config)
+    return changed
+
+
+def update_transcription_settings(query: QueryParams) -> dict[str, Any]:
+    def mutate(config: Config) -> None:
+        _apply_transcription_settings(config, query)
+
+    update_config(mutate)
     return settings_payload()

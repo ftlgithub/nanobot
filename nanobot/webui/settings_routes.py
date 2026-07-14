@@ -21,7 +21,7 @@ from nanobot.agent.tools.mcp import request_mcp_reload
 from nanobot.api.runtime import ApiRuntime, ApiStartOptions, api_runtime_paths
 from nanobot.bus.queue import MessageBus
 from nanobot.channels._setup import channel_setup_spec
-from nanobot.config.loader import get_config_path, load_config, save_config
+from nanobot.config.loader import get_config_path, load_config, update_config
 from nanobot.optional_features import (
     OptionalFeatureError,
     extra_installed,
@@ -773,51 +773,56 @@ class WebUISettingsRouter:
         if not raw_values:
             return []
 
-        config = load_config()
-        section = getattr(config.channels, name, None)
-        if name == "feishu":
-            from nanobot.channels._feishu_instances import feishu_instance_specs
-            from nanobot.channels.feishu import FeishuChannel
-
-            specs = feishu_instance_specs(section, FeishuChannel.default_config())
-            selected = next((spec for spec in specs if spec.instance_id == instance_id), None)
-            channel_config = dict(selected.config) if selected is not None else {}
-        elif hasattr(section, "model_dump"):
-            channel_config = section.model_dump(mode="json", by_alias=True)
-        elif isinstance(section, dict):
-            channel_config = dict(section)
-        else:
-            channel_config = {}
-
         saved: list[str] = []
-        prefix = f"channels.{name}."
-        for raw_key, raw_value in raw_values.items():
-            if not isinstance(raw_key, str) or not raw_key:
-                raise WebUISettingsError("channel settings payload contains an invalid key")
-            field = raw_key[len(prefix):] if raw_key.startswith(prefix) else raw_key
-            value_type = field_types.get(field)
-            if value_type is None:
-                raise WebUISettingsError(f"'{raw_key}' cannot be configured from WebUI")
-            value = self._coerce_channel_value(raw_key, raw_value, value_type)
-            if value is _SKIP_FIELD:
-                continue
-            self._assign_channel_config_value(channel_config, field, value)
-            saved.append(raw_key)
 
-        if name == "feishu":
-            from nanobot.channels._feishu_instances import upsert_feishu_instance
-            from nanobot.channels.feishu import FeishuChannel
+        def mutate(config: Any) -> None:
+            section = getattr(config.channels, name, None)
+            if name == "feishu":
+                from nanobot.channels._feishu_instances import feishu_instance_specs
+                from nanobot.channels.feishu import FeishuChannel
 
-            existing = getattr(config.channels, name, None)
-            channel_config = upsert_feishu_instance(
-                existing if isinstance(existing, dict) else {},
-                FeishuChannel.default_config(),
-                instance_id,
-                channel_config,
-            )
+                specs = feishu_instance_specs(section, FeishuChannel.default_config())
+                selected = next(
+                    (spec for spec in specs if spec.instance_id == instance_id),
+                    None,
+                )
+                channel_config = dict(selected.config) if selected is not None else {}
+            elif hasattr(section, "model_dump"):
+                channel_config = section.model_dump(mode="json", by_alias=True)
+            elif isinstance(section, dict):
+                channel_config = dict(section)
+            else:
+                channel_config = {}
 
-        setattr(config.channels, name, channel_config)
-        save_config(config)
+            prefix = f"channels.{name}."
+            for raw_key, raw_value in raw_values.items():
+                if not isinstance(raw_key, str) or not raw_key:
+                    raise WebUISettingsError("channel settings payload contains an invalid key")
+                field = raw_key[len(prefix):] if raw_key.startswith(prefix) else raw_key
+                value_type = field_types.get(field)
+                if value_type is None:
+                    raise WebUISettingsError(f"'{raw_key}' cannot be configured from WebUI")
+                value = self._coerce_channel_value(raw_key, raw_value, value_type)
+                if value is _SKIP_FIELD:
+                    continue
+                self._assign_channel_config_value(channel_config, field, value)
+                saved.append(raw_key)
+
+            if name == "feishu":
+                from nanobot.channels._feishu_instances import upsert_feishu_instance
+                from nanobot.channels.feishu import FeishuChannel
+
+                existing = getattr(config.channels, name, None)
+                channel_config = upsert_feishu_instance(
+                    existing if isinstance(existing, dict) else {},
+                    FeishuChannel.default_config(),
+                    instance_id,
+                    channel_config,
+                )
+
+            setattr(config.channels, name, channel_config)
+
+        update_config(mutate)
         return saved
 
     @staticmethod

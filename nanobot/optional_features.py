@@ -26,7 +26,7 @@ from nanobot.channels._setup import (
     stringify_channel_value,
 )
 from nanobot.channels.registry import DEFAULT_ENABLED_CHANNELS
-from nanobot.config.loader import merge_missing_defaults
+from nanobot.config.loader import get_config_repository, merge_missing_defaults
 from nanobot.config.schema import Config
 
 
@@ -266,29 +266,16 @@ def install_extra(
     return InstallResult(False, label, pip_cmd, failed_cmd=failed_cmd, output=output)
 
 
-def read_config_data(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def write_config_data(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-
 def enable_channel_config(config_path: Path, channel_name: str, defaults: dict[str, Any]) -> None:
-    data = read_config_data(config_path)
-    channels = data.setdefault("channels", {})
-    existing = channels.get(channel_name, {})
-    if not isinstance(existing, dict):
-        existing = {}
-    merged = merge_missing_defaults(existing, defaults)
-    merged["enabled"] = True
-    channels[channel_name] = merged
-    write_config_data(config_path, data)
+    def mutate(config: Config) -> None:
+        existing = getattr(config.channels, channel_name, {})
+        if not isinstance(existing, dict):
+            existing = {}
+        merged = merge_missing_defaults(existing, defaults)
+        merged["enabled"] = True
+        setattr(config.channels, channel_name, merged)
+
+    get_config_repository(config_path).update(mutate)
 
 
 def enable_feishu_instance_config(
@@ -297,24 +284,29 @@ def enable_feishu_instance_config(
     *,
     instance_id: str = DEFAULT_INSTANCE_ID,
 ) -> None:
-    data = read_config_data(config_path)
-    channels = data.setdefault("channels", {})
-    existing = channels.get("feishu", {})
-    if not isinstance(existing, dict):
-        existing = {}
-    channels["feishu"] = set_feishu_instance_enabled(existing, defaults, instance_id, True)
-    write_config_data(config_path, data)
+    def mutate(config: Config) -> None:
+        existing = getattr(config.channels, "feishu", {})
+        if not isinstance(existing, dict):
+            existing = {}
+        config.channels.feishu = set_feishu_instance_enabled(
+            existing,
+            defaults,
+            instance_id,
+            True,
+        )
+
+    get_config_repository(config_path).update(mutate)
 
 
 def disable_channel_config(config_path: Path, channel_name: str) -> None:
-    data = read_config_data(config_path)
-    channels = data.setdefault("channels", {})
-    existing = channels.get(channel_name, {})
-    if not isinstance(existing, dict):
-        existing = {}
-    existing["enabled"] = False
-    channels[channel_name] = existing
-    write_config_data(config_path, data)
+    def mutate(config: Config) -> None:
+        existing = getattr(config.channels, channel_name, {})
+        if not isinstance(existing, dict):
+            existing = {}
+        existing["enabled"] = False
+        setattr(config.channels, channel_name, existing)
+
+    get_config_repository(config_path).update(mutate)
 
 
 def disable_feishu_instance_config(
@@ -323,13 +315,18 @@ def disable_feishu_instance_config(
     *,
     instance_id: str = DEFAULT_INSTANCE_ID,
 ) -> None:
-    data = read_config_data(config_path)
-    channels = data.setdefault("channels", {})
-    existing = channels.get("feishu", {})
-    if not isinstance(existing, dict):
-        existing = {}
-    channels["feishu"] = set_feishu_instance_enabled(existing, defaults, instance_id, False)
-    write_config_data(config_path, data)
+    def mutate(config: Config) -> None:
+        existing = getattr(config.channels, "feishu", {})
+        if not isinstance(existing, dict):
+            existing = {}
+        config.channels.feishu = set_feishu_instance_enabled(
+            existing,
+            defaults,
+            instance_id,
+            False,
+        )
+
+    get_config_repository(config_path).update(mutate)
 
 
 def channel_enabled(config: Config, name: str) -> bool:
