@@ -503,8 +503,8 @@ async def cmd_dream_prompt(ctx: CommandContext) -> OutboundMessage:
     else:
         content = (
             "Dream memory instructions: nanobot default\n\n"
-            f"- Editable file: `{display_path}`\n"
-            "- Run `/dream-prompt init` to create an editable copy."
+            "- Editable copy: not created yet\n"
+            f"- Run `/dream-prompt init` to create {display_path}."
         )
 
     return OutboundMessage(
