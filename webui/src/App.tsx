@@ -38,6 +38,7 @@ import { deriveTitle } from "@/lib/format";
 import { NanobotClient } from "@/lib/nanobot-client";
 import { ClientProvider, useClient } from "@/providers/ClientProvider";
 import type {
+  BootstrapResponse,
   ChatSummary,
   RuntimeSurface,
   PairingRequestInfo,
@@ -71,7 +72,7 @@ type BootState =
       token: string;
       tokenExpiresAt: number;
       modelName: string | null;
-      maxMessageBytes: number | null;
+      ingressLimits: BootstrapResponse["limits"] | null;
       runtimeSurface: RuntimeSurface;
     };
 
@@ -802,7 +803,7 @@ export default function App() {
               token: boot.api_token,
               tokenExpiresAt,
               modelName: boot.model_name ?? current.modelName,
-              maxMessageBytes: boot.max_message_bytes ?? current.maxMessageBytes,
+              ingressLimits: boot.limits ?? current.ingressLimits,
               runtimeSurface,
             }
           : current,
@@ -844,7 +845,7 @@ export default function App() {
             token: boot.api_token,
             tokenExpiresAt: bootstrapTokenExpiresAt(boot.expires_in),
             modelName: boot.model_name ?? null,
-            maxMessageBytes: boot.max_message_bytes ?? null,
+            ingressLimits: boot.limits ?? null,
             runtimeSurface,
           });
         } catch (e) {
@@ -967,7 +968,7 @@ export default function App() {
       client={state.client}
       token={state.token}
       modelName={state.modelName}
-      maxMessageBytes={state.maxMessageBytes}
+      ingressLimits={state.ingressLimits}
     >
       <Shell
         runtimeSurface={state.runtimeSurface}

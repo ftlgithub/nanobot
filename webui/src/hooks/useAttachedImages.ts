@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { encodeImage, type EncodeFailure } from "@/lib/imageEncode";
+import type { WebUIIngressLimits } from "@/lib/types";
 
 /** Lifecycle stages of one attachment:
  *
@@ -46,7 +47,8 @@ export type AttachmentError =
   | "unsupported_type"   // server whitelist excludes this MIME
   | "empty_file"         // backend data-URL decoder rejects empty payloads
   | "too_many_attachments" // per-message cap (4) reached before enqueue
-  | "total_too_large"    // combined base64 payload would exceed the WS frame limit
+  | "total_too_large"    // decoded attachments exceed the business-policy total
+  | "transport_too_large" // projected JSON frame exceeds the transport guard
   | "magic_mismatch"     // extension lies about the real content
   | "decode_failed"      // Worker couldn't decode / re-encode
   | "too_large"          // even after normalization we exceed the budget
@@ -54,9 +56,8 @@ export type AttachmentError =
 
 export const MAX_ATTACHMENTS_PER_MESSAGE = 4;
 export const MAX_IMAGES_PER_MESSAGE = MAX_ATTACHMENTS_PER_MESSAGE;
-const MAX_FILE_BYTES = 6 * 1024 * 1024;
-/** Keep room for message text, IDs, mention metadata, filenames, and JSON framing. */
-const MESSAGE_ENVELOPE_RESERVE_BYTES = 64 * 1024;
+export const MAX_ATTACHMENT_BYTES = 6 * 1024 * 1024;
+export const MAX_TOTAL_ATTACHMENT_BYTES = 24 * 1024 * 1024;
 
 /** MIME whitelist — mirrors the server's and the ``<input accept>`` attr. */
 const ACCEPTED_IMAGE_MIMES: ReadonlySet<string> = new Set([
@@ -108,20 +109,33 @@ function mimeForFile(file: File): string {
   return file.type;
 }
 
-function projectedDataUrlBytes(file: File): number {
+function projectedDataUrlBytes(
+  file: File,
+  kind: AttachmentKind,
+  maxFileBytes: number,
+): number {
   const prefixBytes = `data:${mimeForFile(file)};base64,`.length;
-  return prefixBytes + 4 * Math.ceil(file.size / 3);
+  const decodedBytes = kind === "image" ? Math.min(file.size, maxFileBytes) : file.size;
+  return prefixBytes + 4 * Math.ceil(decodedBytes / 3);
 }
 
-function attachmentPayloadBudget(maxMessageBytes: number | null | undefined): number | null {
-  if (
-    typeof maxMessageBytes !== "number"
-    || !Number.isFinite(maxMessageBytes)
-    || maxMessageBytes <= 0
-  ) {
+function positiveLimit(value: number | null | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback;
+}
+
+function attachmentPayloadBudget(limits: WebUIIngressLimits | null | undefined): number | null {
+  const maxFrameBytes = limits?.transport.max_frame_bytes;
+  if (typeof maxFrameBytes !== "number" || !Number.isFinite(maxFrameBytes)) {
     return null;
   }
-  return Math.max(0, Math.floor(maxMessageBytes) - MESSAGE_ENVELOPE_RESERVE_BYTES);
+  return Math.max(
+    0,
+    Math.floor(maxFrameBytes)
+      - positiveLimit(limits?.message.max_text_bytes, 0)
+      - positiveLimit(limits?.transport.envelope_reserve_bytes, 0),
+  );
 }
 
 export function acceptedAttachmentKind(file: File): AttachmentKind | null {
@@ -177,7 +191,7 @@ function bufferToBase64(buf: ArrayBuffer): string {
   return btoa(binary);
 }
 
-async function encodeFile(file: File): Promise<{
+async function encodeFile(file: File, maxFileBytes: number): Promise<{
   ok: true;
   dataUrl: string;
   bytes: number;
@@ -185,7 +199,7 @@ async function encodeFile(file: File): Promise<{
   ok: false;
   reason: AttachmentError;
 }> {
-  if (file.size > MAX_FILE_BYTES) return { ok: false, reason: "too_large" };
+  if (file.size > maxFileBytes) return { ok: false, reason: "too_large" };
   try {
     const buffer = await file.arrayBuffer();
     return {
@@ -238,7 +252,7 @@ export interface UseAttachedImagesApi {
 }
 
 interface UseAttachedImagesOptions {
-  maxMessageBytes?: number | null;
+  ingressLimits?: WebUIIngressLimits | null;
 }
 
 /** Manage the lifecycle of attachments in the Composer.
@@ -250,9 +264,21 @@ interface UseAttachedImagesOptions {
  *   - focus bookkeeping so keyboard delete doesn't strand the user
  */
 export function useAttachedImages({
-  maxMessageBytes = null,
+  ingressLimits = null,
 }: UseAttachedImagesOptions = {}): UseAttachedImagesApi {
   const [images, setImages] = useState<AttachedAttachment[]>([]);
+  const maxAttachments = positiveLimit(
+    ingressLimits?.attachments.max_count,
+    MAX_ATTACHMENTS_PER_MESSAGE,
+  );
+  const maxFileBytes = positiveLimit(
+    ingressLimits?.attachments.max_file_bytes,
+    MAX_ATTACHMENT_BYTES,
+  );
+  const maxTotalBytes = positiveLimit(
+    ingressLimits?.attachments.max_total_bytes,
+    MAX_TOTAL_ATTACHMENT_BYTES,
+  );
   // Ref mirror so ``enqueue`` can see the authoritative length when invoked
   // multiple times in a single tick (rapid file selection, drag of many
   // files, paste storms). ``state`` is stale for that second + call.
@@ -271,10 +297,20 @@ export function useAttachedImages({
     (files: Iterable<File>) => {
       const rejected: Array<{ file: File; reason: AttachmentError }> = [];
       const toAdd: AttachedAttachment[] = [];
-      let slot = MAX_ATTACHMENTS_PER_MESSAGE - imagesRef.current.length;
-      const payloadBudget = attachmentPayloadBudget(maxMessageBytes);
-      let projectedBytes = imagesRef.current.reduce(
-        (total, image) => total + (image.dataUrl?.length ?? projectedDataUrlBytes(image.file)),
+      let slot = maxAttachments - imagesRef.current.length;
+      const payloadBudget = attachmentPayloadBudget(ingressLimits);
+      let projectedWireBytes = imagesRef.current.reduce(
+        (total, image) => total + (
+          image.dataUrl?.length
+          ?? projectedDataUrlBytes(image.file, image.kind, maxFileBytes)
+        ),
+        0,
+      );
+      let projectedDecodedBytes = imagesRef.current.reduce(
+        (total, image) => total + (
+          image.encodedBytes
+          ?? (image.kind === "image" ? Math.min(image.file.size, maxFileBytes) : image.file.size)
+        ),
         0,
       );
 
@@ -288,7 +324,7 @@ export function useAttachedImages({
           rejected.push({ file, reason: "empty_file" });
           continue;
         }
-        if (kind === "file" && file.size > MAX_FILE_BYTES) {
+        if (kind === "file" && file.size > maxFileBytes) {
           rejected.push({ file, reason: "too_large" });
           continue;
         }
@@ -296,13 +332,19 @@ export function useAttachedImages({
           rejected.push({ file, reason: "too_many_attachments" });
           continue;
         }
-        const nextBytes = projectedDataUrlBytes(file);
-        if (payloadBudget !== null && projectedBytes + nextBytes > payloadBudget) {
+        const nextDecodedBytes = kind === "image" ? Math.min(file.size, maxFileBytes) : file.size;
+        if (projectedDecodedBytes + nextDecodedBytes > maxTotalBytes) {
           rejected.push({ file, reason: "total_too_large" });
           continue;
         }
+        const nextWireBytes = projectedDataUrlBytes(file, kind, maxFileBytes);
+        if (payloadBudget !== null && projectedWireBytes + nextWireBytes > payloadBudget) {
+          rejected.push({ file, reason: "transport_too_large" });
+          continue;
+        }
         slot -= 1;
-        projectedBytes += nextBytes;
+        projectedDecodedBytes += nextDecodedBytes;
+        projectedWireBytes += nextWireBytes;
         toAdd.push({
           id: uuid(),
           kind,
@@ -319,7 +361,9 @@ export function useAttachedImages({
         // Fire the Worker after the commit so chips render first (good INP).
         for (const entry of toAdd) {
           queueMicrotask(() => {
-            const work = entry.kind === "image" ? encodeImage(entry.file) : encodeFile(entry.file);
+            const work = entry.kind === "image"
+              ? encodeImage(entry.file)
+              : encodeFile(entry.file, maxFileBytes);
             work.then(
               (result) => {
                 if (result.ok) {
@@ -350,7 +394,7 @@ export function useAttachedImages({
       }
       return { rejected };
     },
-    [maxMessageBytes, setEntry],
+    [ingressLimits, maxAttachments, maxFileBytes, maxTotalBytes, setEntry],
   );
 
   const remove = useCallback((id: string) => {
@@ -395,7 +439,7 @@ export function useAttachedImages({
   const restoreReadyImages = useCallback((restored: RestoredReadyAttachment[]) => {
     const toRestore = restored
       .filter((img) => acceptedAttachmentKind(dataUrlToFile(img.dataUrl, img.name)))
-      .slice(0, MAX_ATTACHMENTS_PER_MESSAGE)
+      .slice(0, maxAttachments)
       .map((img): AttachedAttachment => {
         const file = dataUrlToFile(img.dataUrl, img.name);
         const kind = img.kind ?? kindFromDataUrl(img.dataUrl);
@@ -422,7 +466,7 @@ export function useAttachedImages({
       imagesRef.current = toRestore;
       return toRestore;
     });
-  }, []);
+  }, [maxAttachments]);
 
   // Final safety net: revoke any outstanding blob URLs on unmount. Safe
   // under StrictMode double-invoke because revoked blob URLs are only
@@ -442,7 +486,7 @@ export function useAttachedImages({
   }, []);
 
   const encoding = images.some((img) => img.status === "encoding");
-  const full = images.length >= MAX_ATTACHMENTS_PER_MESSAGE;
+  const full = images.length >= maxAttachments;
 
   return { images, enqueue, remove, clear, restoreReadyImages, encoding, full };
 }

@@ -95,6 +95,28 @@ async def test_message_without_media_backward_compatible() -> None:
 
 
 @pytest.mark.asyncio
+async def test_message_text_policy_is_independent_from_transport_limit() -> None:
+    channel = _make_channel()
+    mock_conn = AsyncMock()
+    envelope = {
+        "type": "message",
+        "chat_id": "abc123",
+        "content": "你" * 22_000,
+    }
+
+    await channel._dispatch_envelope(mock_conn, "client-1", envelope)
+
+    channel._handle_message.assert_not_awaited()
+    err = json.loads(mock_conn.send.call_args[0][0])
+    assert err == {
+        "event": "error",
+        "chat_id": "abc123",
+        "detail": "message_rejected",
+        "reason": "text_too_large",
+    }
+
+
+@pytest.mark.asyncio
 async def test_message_forwards_normalized_cli_app_attachments() -> None:
     channel = _make_channel()
     mock_conn = AsyncMock()
@@ -224,7 +246,7 @@ async def test_message_rejected_when_more_than_four_images(tmp_path) -> None:
     mock_conn.send.assert_awaited_once()
     err = json.loads(mock_conn.send.call_args[0][0])
     assert err["event"] == "error"
-    assert err["detail"] == "image_rejected"
+    assert err["detail"] == "attachment_rejected"
     assert err["reason"] == "too_many_images"
 
 
@@ -252,7 +274,7 @@ async def test_message_rejected_when_too_many_total_attachments(tmp_path) -> Non
 
     channel._handle_message.assert_not_awaited()
     err = json.loads(mock_conn.send.call_args[0][0])
-    assert err["detail"] == "image_rejected"
+    assert err["detail"] == "attachment_rejected"
     assert err["reason"] == "too_many_attachments"
 
 
@@ -275,7 +297,7 @@ async def test_message_rejected_on_oversize_payload(tmp_path) -> None:
 
     channel._handle_message.assert_not_awaited()
     err = json.loads(mock_conn.send.call_args[0][0])
-    assert err["detail"] == "image_rejected"
+    assert err["detail"] == "attachment_rejected"
     assert err["reason"] == "size"
 
 
@@ -349,7 +371,7 @@ async def test_message_rejected_on_unsupported_file_mime(tmp_path) -> None:
 
     channel._handle_message.assert_not_awaited()
     err = json.loads(mock_conn.send.call_args[0][0])
-    assert err["detail"] == "image_rejected"
+    assert err["detail"] == "attachment_rejected"
     assert err["reason"] == "mime"
 
 
@@ -454,7 +476,7 @@ async def test_message_rejected_when_media_field_is_not_list() -> None:
 
     channel._handle_message.assert_not_awaited()
     err = json.loads(mock_conn.send.call_args[0][0])
-    assert err["detail"] == "image_rejected"
+    assert err["detail"] == "attachment_rejected"
     assert err["reason"] == "malformed"
 
 

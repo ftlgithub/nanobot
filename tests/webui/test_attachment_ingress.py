@@ -11,6 +11,7 @@ from nanobot.webui.attachment_ingress import (
     extract_data_url_mime,
     store_inbound_attachments,
 )
+from nanobot.webui.ingress_policy import AttachmentIngressLimits
 
 
 def _data_url(mime: str, payload: bytes) -> str:
@@ -72,4 +73,33 @@ def test_invalid_batch_removes_files_already_persisted(tmp_path: Path) -> None:
 
     assert paths == []
     assert rejection == "mime"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_single_file_limit_is_attachment_policy_not_transport(tmp_path: Path) -> None:
+    paths, rejection = store_inbound_attachments(
+        [{"data_url": _data_url("text/plain", b"12345"), "name": "large.txt"}],
+        media_dir=tmp_path,
+        logger=MagicMock(),
+        limits=AttachmentIngressLimits(max_file_bytes=4, max_total_bytes=20),
+    )
+
+    assert paths == []
+    assert rejection == "size"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_total_attachment_policy_rolls_back_the_batch(tmp_path: Path) -> None:
+    paths, rejection = store_inbound_attachments(
+        [
+            {"data_url": _data_url("text/plain", b"1234"), "name": "one.txt"},
+            {"data_url": _data_url("text/plain", b"5678"), "name": "two.txt"},
+        ],
+        media_dir=tmp_path,
+        logger=MagicMock(),
+        limits=AttachmentIngressLimits(max_file_bytes=4, max_total_bytes=6),
+    )
+
+    assert paths == []
+    assert rejection == "total_size"
     assert list(tmp_path.iterdir()) == []

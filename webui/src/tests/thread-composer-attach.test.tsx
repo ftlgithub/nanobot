@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ThreadComposer } from "@/components/thread/ThreadComposer";
 import type { EncodeResponse } from "@/lib/imageEncode";
+import type { WebUIIngressLimits } from "@/lib/types";
 
 const encodeImage = vi.fn<(file: File) => Promise<EncodeResponse>>();
 
@@ -41,6 +42,31 @@ function resolveReady(file: File): EncodeResponse {
     bytes: file.size,
     origBytes: file.size,
     normalized: false,
+  };
+}
+
+function ingressLimits({
+  maxFrameBytes = 36 * 1024 * 1024,
+  maxTextBytes = 64 * 1024,
+  maxFileBytes = 6 * 1024 * 1024,
+  maxTotalBytes = 24 * 1024 * 1024,
+}: {
+  maxFrameBytes?: number;
+  maxTextBytes?: number;
+  maxFileBytes?: number;
+  maxTotalBytes?: number;
+} = {}): WebUIIngressLimits {
+  return {
+    transport: {
+      max_frame_bytes: maxFrameBytes,
+      envelope_reserve_bytes: 64 * 1024,
+    },
+    message: { max_text_bytes: maxTextBytes },
+    attachments: {
+      max_count: 4,
+      max_file_bytes: maxFileBytes,
+      max_total_bytes: maxTotalBytes,
+    },
   };
 }
 
@@ -193,11 +219,44 @@ describe("ThreadComposer — attachments", () => {
     expect(screen.queryByTestId("composer-chip")).not.toBeInTheDocument();
   });
 
-  it("rejects a file immediately when attachments would exceed the server frame limit", async () => {
+  it("reports a transport limit separately from attachment policy", async () => {
     const first = pdfFile("first.pdf", 400 * 1024);
     const second = pdfFile("second.pdf", 400 * 1024);
 
-    render(<ThreadComposer onSend={vi.fn()} maxMessageBytes={1024 * 1024} />);
+    render(
+      <ThreadComposer
+        onSend={vi.fn()}
+        ingressLimits={ingressLimits({ maxFrameBytes: 1024 * 1024 })}
+      />,
+    );
+
+    const input = screen
+      .getByLabelText(/message input/i)
+      .closest("form")!
+      .querySelector('input[type="file"]') as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [first, second] } });
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "gateway transport limit",
+    );
+    expect(screen.getAllByTestId("composer-chip")).toHaveLength(1);
+    expect(screen.getByText("first.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("second.pdf")).not.toBeInTheDocument();
+  });
+
+  it("enforces the decoded attachment-total policy independently", async () => {
+    const first = pdfFile("first.pdf", 400 * 1024);
+    const second = pdfFile("second.pdf", 400 * 1024);
+
+    render(
+      <ThreadComposer
+        onSend={vi.fn()}
+        ingressLimits={ingressLimits({ maxTotalBytes: 700 * 1024 })}
+      />,
+    );
 
     const input = screen
       .getByLabelText(/message input/i)
@@ -212,8 +271,25 @@ describe("ThreadComposer — attachments", () => {
       "Attachments are too large together",
     );
     expect(screen.getAllByTestId("composer-chip")).toHaveLength(1);
-    expect(screen.getByText("first.pdf")).toBeInTheDocument();
-    expect(screen.queryByText("second.pdf")).not.toBeInTheDocument();
+  });
+
+  it("enforces the text-byte policy without changing attachment limits", () => {
+    const onSend = vi.fn();
+    render(
+      <ThreadComposer
+        onSend={onSend}
+        ingressLimits={ingressLimits({ maxTextBytes: 4 })}
+      />,
+    );
+
+    const textarea = screen.getByLabelText(/message input/i);
+    fireEvent.change(textarea, { target: { value: "你好" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Message text is too large (max 4 B)",
+    );
+    expect(onSend).not.toHaveBeenCalled();
   });
 
   it("accepts supported documents from paste and drop", async () => {

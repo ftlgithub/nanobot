@@ -7,24 +7,25 @@ from pathlib import Path
 from typing import Any, Literal
 
 from nanobot.utils.media_decode import FileSizeExceeded, save_base64_data_url
+from nanobot.webui.ingress_policy import (
+    DEFAULT_WEBUI_INGRESS_POLICY,
+    AttachmentIngressLimits,
+)
 
 AttachmentRejection = Literal[
     "malformed",
     "too_many_images",
     "too_many_videos",
     "too_many_attachments",
+    "total_size",
     "mime",
     "size",
     "decode",
 ]
 AttachmentIngressResult = tuple[list[str], AttachmentRejection | None]
 
-_MAX_IMAGES_PER_MESSAGE = 4
-_MAX_IMAGE_BYTES = 8 * 1024 * 1024
 _MAX_VIDEOS_PER_MESSAGE = 1
 _MAX_VIDEO_BYTES = 20 * 1024 * 1024
-_MAX_ATTACHMENTS_PER_MESSAGE = 4
-_MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 
 _IMAGE_MIME_ALLOWED: frozenset[str] = frozenset({
     "image/png",
@@ -80,6 +81,7 @@ def store_inbound_attachments(
     *,
     media_dir: Path,
     logger: Any,
+    limits: AttachmentIngressLimits = DEFAULT_WEBUI_INGRESS_POLICY.attachments,
 ) -> AttachmentIngressResult:
     """Validate and atomically persist one WebUI message's attachments.
 
@@ -102,14 +104,15 @@ def store_inbound_attachments(
             image_count += 1
         elif mime in _DOCUMENT_MIME_ALLOWED:
             document_count += 1
-    if image_count > _MAX_IMAGES_PER_MESSAGE:
+    if image_count > limits.max_count:
         return [], "too_many_images"
     if video_count > _MAX_VIDEOS_PER_MESSAGE:
         return [], "too_many_videos"
-    if image_count + document_count > _MAX_ATTACHMENTS_PER_MESSAGE:
+    if image_count + document_count > limits.max_count:
         return [], "too_many_attachments"
 
     paths: list[str] = []
+    total_attachment_bytes = 0
 
     def abort(reason: AttachmentRejection) -> AttachmentIngressResult:
         for path in paths:
@@ -134,8 +137,7 @@ def store_inbound_attachments(
         is_document = mime in _DOCUMENT_MIME_ALLOWED
         max_bytes = (
             _MAX_VIDEO_BYTES if is_video
-            else _MAX_DOCUMENT_BYTES if is_document
-            else _MAX_IMAGE_BYTES
+            else limits.max_file_bytes
         )
         name = (
             item.get("name")
@@ -157,4 +159,12 @@ def store_inbound_attachments(
         if saved is None:
             return abort("decode")
         paths.append(saved)
+        if not is_video:
+            try:
+                total_attachment_bytes += Path(saved).stat().st_size
+            except OSError as exc:
+                logger.warning("failed to stat inbound attachment {}: {}", saved, exc)
+                return abort("decode")
+            if total_attachment_bytes > limits.max_total_bytes:
+                return abort("total_size")
     return paths, None

@@ -1010,6 +1010,7 @@
       "encoding": "Traitement…",
       "remove": "Retirer la pièce jointe",
       "normalizedSizeHint": "{{orig}} → {{current}} (auto)",
+      "textTooLarge": "Le texte du message est trop volumineux (maximum {{max}})",
       "imageRejected": {
         "unsupported_type": "Type de fichier non pris en charge",
         "empty_file": "Impossible de joindre des fichiers vides",
@@ -1019,6 +1020,7 @@
         "decode_failed": "Impossible de décoder cette image",
         "too_large": "Fichier trop volumineux — essayez-en un plus petit",
         "total_too_large": "Les pièces jointes sont trop volumineuses ensemble — supprimez-en ou utilisez des fichiers plus petits",
+        "transport_too_large": "Cette pièce jointe dépasserait la limite de transport de la passerelle",
         "io": "Impossible de lire ce fichier"
       },
       "mentions": {

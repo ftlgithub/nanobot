@@ -1,12 +1,13 @@
 import { createContext, useContext, type ReactNode } from "react";
 
 import type { NanobotClient } from "@/lib/nanobot-client";
+import type { WebUIIngressLimits } from "@/lib/types";
 
 interface ClientContextValue {
   client: NanobotClient;
   token: string;
   modelName: string | null;
-  maxMessageBytes: number | null;
+  ingressLimits: WebUIIngressLimits | null;
 }
 
 const ClientContext = createContext<ClientContextValue | null>(null);
@@ -15,17 +16,17 @@ export function ClientProvider({
   client,
   token,
   modelName = null,
-  maxMessageBytes = null,
+  ingressLimits = null,
   children,
 }: {
   client: NanobotClient;
   token: string;
   modelName?: string | null;
-  maxMessageBytes?: number | null;
+  ingressLimits?: WebUIIngressLimits | null;
   children: ReactNode;
 }) {
   return (
-    <ClientContext.Provider value={{ client, token, modelName, maxMessageBytes }}>
+    <ClientContext.Provider value={{ client, token, modelName, ingressLimits }}>
       {children}
     </ClientContext.Provider>
   );

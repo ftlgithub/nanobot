@@ -308,10 +308,31 @@ export interface BootstrapResponse {
   ws_path: string;
   ws_url?: string | null;
   expires_in: number;
-  max_message_bytes?: number;
+  limits?: WebUIIngressLimits;
   model_name?: string | null;
   runtime_surface?: RuntimeSurface;
   runtime_capabilities?: RuntimeCapabilities;
+}
+
+export interface WebUITransportLimits {
+  max_frame_bytes: number;
+  envelope_reserve_bytes: number;
+}
+
+export interface WebUIMessageLimits {
+  max_text_bytes: number;
+}
+
+export interface WebUIAttachmentLimits {
+  max_count: number;
+  max_file_bytes: number;
+  max_total_bytes: number;
+}
+
+export interface WebUIIngressLimits {
+  transport: WebUITransportLimits;
+  message: WebUIMessageLimits;
+  attachments: WebUIAttachmentLimits;
 }
 
 export type RuntimeSurface = "browser" | "native";

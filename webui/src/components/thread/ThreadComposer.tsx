@@ -79,6 +79,7 @@ import type {
   OutboundMcpPresetMention,
   SlashCommand,
   SkillSummary,
+  WebUIIngressLimits,
   WorkspaceScopePayload,
   WorkspacesPayload,
 } from "@/lib/types";
@@ -141,6 +142,10 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
 }
 
 function isVoiceShortcutDown(event: KeyboardEvent): boolean {
@@ -220,7 +225,7 @@ interface ThreadComposerProps {
   onWorkspaceScopeChange?: (scope: WorkspaceScopePayload) => void;
   pendingQueueKey?: string | null;
   transcriptionProvider?: string | null;
-  maxMessageBytes?: number | null;
+  ingressLimits?: WebUIIngressLimits | null;
 }
 
 const COMMAND_ICONS: Record<string, LucideIcon> = {
@@ -847,7 +852,7 @@ export function ThreadComposer({
   onWorkspaceScopeChange,
   pendingQueueKey = null,
   transcriptionProvider = null,
-  maxMessageBytes = null,
+  ingressLimits = null,
 }: ThreadComposerProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
@@ -903,22 +908,37 @@ export function ThreadComposer({
     ? t("thread.composer.placeholderStreaming")
     : placeholder ?? t("thread.composer.placeholderThread");
 
+  const maxAttachments = ingressLimits?.attachments.max_count
+    ?? MAX_ATTACHMENTS_PER_MESSAGE;
+  const maxTextBytes = ingressLimits?.message.max_text_bytes ?? 64 * 1024;
   const { images, enqueue, remove, clear, restoreReadyImages, encoding, full } =
-    useAttachedImages({ maxMessageBytes });
+    useAttachedImages({ ingressLimits });
 
   const formatRejection = useCallback(
     (reason: AttachmentError): string => {
       const key = `thread.composer.imageRejected.${reason}`;
       const fallback = reason === "too_many_attachments"
-        ? `Max ${MAX_ATTACHMENTS_PER_MESSAGE} attachments per message`
+        ? `Max ${maxAttachments} attachments per message`
         : reason === "empty_file"
           ? "Empty files cannot be attached"
           : reason === "total_too_large"
             ? "Attachments are too large together — remove some or use smaller files"
-        : "Unsupported file type";
-      return t(key, { max: MAX_ATTACHMENTS_PER_MESSAGE, defaultValue: fallback });
+            : reason === "transport_too_large"
+              ? "This attachment would exceed the gateway transport limit"
+              : reason === "too_large"
+                ? "File is too large"
+                : "Unsupported file type";
+      return t(key, { max: maxAttachments, defaultValue: fallback });
     },
-    [t],
+    [maxAttachments, t],
+  );
+
+  const textTooLargeMessage = useCallback(
+    () => t("thread.composer.textTooLarge", {
+      max: formatBytes(maxTextBytes),
+      defaultValue: `Message text is too large (max ${formatBytes(maxTextBytes)})`,
+    }),
+    [maxTextBytes, t],
   );
 
   const addFiles = useCallback(
@@ -1429,6 +1449,10 @@ export function ThreadComposer({
   const queueGuidancePrompt = useCallback(() => {
     const text = value.trim();
     if (!canQueueGuidance || (!text && readyImages.length === 0)) return;
+    if (utf8Bytes(text) > maxTextBytes) {
+      setInlineError(textTooLargeMessage());
+      return;
+    }
     const queuedImages = readyImagesToQueuedImages(readyImages);
     queuedPromptCounterRef.current += 1;
     const id = `queued-prompt-${Date.now()}-${queuedPromptCounterRef.current}`;
@@ -1443,7 +1467,7 @@ export function ThreadComposer({
     ]);
     clear();
     clearComposerText();
-  }, [canQueueGuidance, clear, clearComposerText, readyImages, value]);
+  }, [canQueueGuidance, clear, clearComposerText, maxTextBytes, readyImages, textTooLargeMessage, value]);
 
   const removeQueuedPrompt = useCallback((id: string) => {
     secondEnterPromptIdRef.current = null;
@@ -1544,6 +1568,10 @@ export function ThreadComposer({
     if (!canSend) return;
     const trimmed = value.trim();
     const content = trimmed;
+    if (utf8Bytes(content) > maxTextBytes) {
+      setInlineError(textTooLargeMessage());
+      return;
+    }
     // Share the same ``data:`` URL with both the wire payload and the
     // optimistic bubble preview: data URLs are self-contained (no blob
     // lifetime, safe under React StrictMode double-mount) and keep the bubble
@@ -1612,12 +1640,14 @@ export function ThreadComposer({
     clearComposerText,
     handleStop,
     isStreaming,
+    maxTextBytes,
     modelNeedsSetup,
     onModelBadgeClick,
     onSend,
     onStop,
     readyImages,
     slashCommands,
+    textTooLargeMessage,
     value,
   ]);
 

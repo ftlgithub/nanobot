@@ -1011,6 +1011,7 @@
       "encoding": "Procesando…",
       "remove": "Quitar adjunto",
       "normalizedSizeHint": "{{orig}} → {{current}} (auto)",
+      "textTooLarge": "El texto del mensaje es demasiado grande (máximo {{max}})",
       "imageRejected": {
         "unsupported_type": "Tipo de archivo no compatible",
         "empty_file": "No se pueden adjuntar archivos vacíos",
@@ -1020,6 +1021,7 @@
         "decode_failed": "No se pudo decodificar esta imagen",
         "too_large": "Archivo demasiado grande — prueba uno más pequeño",
         "total_too_large": "Los archivos adjuntos son demasiado grandes en conjunto; elimina algunos o usa archivos más pequeños",
+        "transport_too_large": "Este archivo adjunto superaría el límite de transporte de la puerta de enlace",
         "io": "No se pudo leer este archivo"
       },
       "mentions": {

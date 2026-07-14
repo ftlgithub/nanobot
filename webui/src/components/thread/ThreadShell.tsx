@@ -311,7 +311,7 @@ export function ThreadShell({
     version: historyVersion,
     forkBoundaryMessageCount,
   } = useSessionHistory(historyKey);
-  const { client, maxMessageBytes, modelName, token } = useClient();
+  const { client, ingressLimits, modelName, token } = useClient();
   const [booting, setBooting] = useState(false);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
   const cliApps = useInstalledSettingItems({
@@ -754,7 +754,7 @@ export function ThreadShell({
           onWorkspaceScopeChange={onWorkspaceScopeChange}
           pendingQueueKey={chatId}
           transcriptionProvider={settingsSnapshot?.transcription?.provider}
-          maxMessageBytes={maxMessageBytes}
+          ingressLimits={ingressLimits}
         />
       ) : (
         <ThreadComposer
@@ -786,7 +786,7 @@ export function ThreadShell({
           workspaceError={workspaceError}
           onWorkspaceScopeChange={onWorkspaceScopeChange}
           transcriptionProvider={settingsSnapshot?.transcription?.provider}
-          maxMessageBytes={maxMessageBytes}
+          ingressLimits={ingressLimits}
         />
       )}
     </>

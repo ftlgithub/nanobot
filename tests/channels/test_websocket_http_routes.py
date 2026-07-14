@@ -222,7 +222,19 @@ async def test_bootstrap_returns_token_for_localhost(
         assert body["ws_path"] == "/"
         assert body["ws_url"] == "ws://127.0.0.1:29901/"
         assert body["expires_in"] > 0
-        assert body["max_message_bytes"] == 1_048_576
+        assert body["limits"] == {
+            "transport": {
+                "max_frame_bytes": 1_048_576,
+                "envelope_reserve_bytes": 65_536,
+            },
+            "message": {"max_text_bytes": 65_536},
+            "attachments": {
+                "max_count": 4,
+                "max_file_bytes": 6_291_456,
+                "max_total_bytes": 25_165_824,
+            },
+        }
+        assert "max_message_bytes" not in body
         assert isinstance(body.get("model_name"), str)
     finally:
         await channel.stop()

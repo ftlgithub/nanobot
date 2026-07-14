@@ -257,6 +257,7 @@ class WebSocketChannel(BaseChannel):
         self._http_router = gateway.http
         self._tokens = gateway.tokens
         self._media = gateway.media
+        self._ingress = gateway.ingress
         self._transcripts = gateway.transcripts
         self._workspaces = gateway.workspaces
 
@@ -620,21 +621,35 @@ class WebSocketChannel(BaseChannel):
             if not isinstance(content, str):
                 await self._send_event(connection, "error", detail="missing content")
                 return
+            message_rejection = self._ingress.validate_text(content)
+            if message_rejection is not None:
+                await self._send_event(
+                    connection,
+                    "error",
+                    chat_id=cid,
+                    detail="message_rejected",
+                    reason=message_rejection,
+                )
+                return
 
             raw_media = envelope.get("media")
             media_paths: list[str] = []
             if raw_media is not None:
                 if not isinstance(raw_media, list):
                     await self._send_event(
-                        connection, "error",
-                        detail="image_rejected", reason="malformed",
+                        connection,
+                        "error",
+                        detail="attachment_rejected",
+                        reason="malformed",
                     )
                     return
                 media_paths, reason = self._media.store_inbound_attachments(raw_media)
                 if reason is not None:
                     await self._send_event(
-                        connection, "error",
-                        detail="image_rejected", reason=reason,
+                        connection,
+                        "error",
+                        detail="attachment_rejected",
+                        reason=reason,
                     )
                     return
 
