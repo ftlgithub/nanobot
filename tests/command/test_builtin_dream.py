@@ -333,9 +333,7 @@ async def test_dream_prompt_reports_default_prompt(tmp_path) -> None:
     out = await cmd_dream_prompt(_make_dream_prompt_ctx(tmp_path))
 
     assert "Dream memory instructions: nanobot default" in out.content
-    assert "Editable copy: not created yet" in out.content
     assert "prompts/dream.md" in out.content
-    assert "`prompts/dream.md`" not in out.content
     assert str(tmp_path) not in out.content
     assert "/dream-prompt init" in out.content
 

@@ -402,7 +402,7 @@ export default function MarkdownTextRenderer({
         }
         const raw = String(kids).replace(/\n$/, "");
         if (isLikelyFilePath(raw)) {
-          return <FileReferenceChip path={raw} onOpen={onOpenFilePreview} />;
+          return <FileReferenceChip path={raw} />;
         }
         /** Plain fenced ``` blocks (no language) & wide one-liners: block monospace, not inline pill. */
         const widePlainBlock = raw.includes("\n") || raw.length > 120;

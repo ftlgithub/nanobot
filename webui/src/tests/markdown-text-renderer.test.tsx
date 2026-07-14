@@ -34,6 +34,24 @@ describe("MarkdownTextRenderer", () => {
     );
   });
 
+  it("keeps inferred inline file paths non-interactive", () => {
+    const onOpenFilePreview = vi.fn();
+    render(
+      <MarkdownTextRenderer onOpenFilePreview={onOpenFilePreview}>
+        {"Future file: `notes/missing.md`"}
+      </MarkdownTextRenderer>,
+    );
+
+    const reference = screen.getByTestId("inline-file-path");
+    expect(reference).toHaveTextContent("missing.md");
+    expect(reference).not.toHaveAttribute("role");
+    expect(reference).not.toHaveAttribute("tabindex");
+
+    fireEvent.click(reference);
+
+    expect(onOpenFilePreview).not.toHaveBeenCalled();
+  });
+
   it("does not treat non-file hrefs as previews just because the label looks like a file", () => {
     const onOpenFilePreview = vi.fn();
     render(
