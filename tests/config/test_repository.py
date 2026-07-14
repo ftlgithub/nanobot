@@ -2,7 +2,6 @@ import json
 import os
 import socket
 import stat
-import threading
 from pathlib import Path
 from unittest.mock import patch
 
@@ -84,38 +83,15 @@ def test_update_rejects_stale_expected_revision(tmp_path: Path) -> None:
     assert repository.load_raw().config.api.port == 9001
 
 
-def test_repositories_for_same_path_serialize_updates(tmp_path: Path) -> None:
+def test_repositories_for_same_path_read_latest_config(tmp_path: Path) -> None:
     path = tmp_path / "config.json"
     first = FileConfigRepository(path)
     second = FileConfigRepository(path)
-    first_mutator_entered = threading.Event()
-    release_first = threading.Event()
-    second_mutator_entered = threading.Event()
 
-    def update_first() -> None:
-        def mutate(config):
-            first_mutator_entered.set()
-            assert release_first.wait(timeout=2)
-            config.api.port = 9001
-
-        first.update(mutate)
-
-    def update_second() -> None:
-        def mutate(config):
-            second_mutator_entered.set()
-            config.agents.defaults.timezone = "Asia/Shanghai"
-
-        second.update(mutate)
-
-    first_thread = threading.Thread(target=update_first)
-    second_thread = threading.Thread(target=update_second)
-    first_thread.start()
-    assert first_mutator_entered.wait(timeout=2)
-    second_thread.start()
-    assert not second_mutator_entered.wait(timeout=0.1)
-    release_first.set()
-    first_thread.join(timeout=2)
-    second_thread.join(timeout=2)
+    first.update(lambda config: setattr(config.api, "port", 9001))
+    second.update(
+        lambda config: setattr(config.agents.defaults, "timezone", "Asia/Shanghai")
+    )
 
     config = first.load_raw().config
     assert config.api.port == 9001

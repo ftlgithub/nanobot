@@ -7,7 +7,6 @@ import json
 import os
 import re
 import stat
-import threading
 import uuid
 from collections.abc import Callable
 from contextlib import suppress
@@ -18,15 +17,11 @@ from typing import Any
 from loguru import logger
 from pydantic import BaseModel
 
-from nanobot.config.schema import Config, _resolve_tool_config_refs
+from nanobot.config.schema import Config
 
 ConfigMutator = Callable[[Config], None]
 
 _ENV_REF_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
-_schema_refs_ready = False
-_schema_refs_lock = threading.Lock()
-_path_locks_guard = threading.Lock()
-_path_locks: dict[Path, threading.RLock] = {}
 
 
 class ConfigConflictError(RuntimeError):
@@ -60,22 +55,6 @@ class ConfigCommit:
     changed_paths: frozenset[str]
 
 
-def _ensure_schema_refs() -> None:
-    global _schema_refs_ready
-    if _schema_refs_ready:
-        return
-    with _schema_refs_lock:
-        if not _schema_refs_ready:
-            _resolve_tool_config_refs()
-            _schema_refs_ready = True
-
-
-def _lock_for_path(path: Path) -> threading.RLock:
-    key = path.expanduser().resolve(strict=False)
-    with _path_locks_guard:
-        return _path_locks.setdefault(key, threading.RLock())
-
-
 def _revision_for_bytes(raw: bytes | None) -> str:
     if raw is None:
         return "missing"
@@ -92,7 +71,6 @@ def _config_data(config: Config) -> dict[str, Any]:
 
 
 def _validate_config_data(data: dict[str, Any], path: Path) -> Config:
-    _ensure_schema_refs()
     try:
         return Config.model_validate(data)
     except ValueError as exc:
@@ -100,7 +78,6 @@ def _validate_config_data(data: dict[str, Any], path: Path) -> Config:
 
 
 def _read_snapshot(path: Path) -> PersistedConfigSnapshot:
-    _ensure_schema_refs()
     if not path.exists():
         return PersistedConfigSnapshot(Config(), path, "missing")
 
@@ -158,18 +135,15 @@ def _changed_paths(before: Any, after: Any, prefix: str = "") -> set[str]:
 class FileConfigRepository:
     """Read and atomically update one configuration file.
 
-    The repository does not cache. Every read returns a new validated snapshot,
-    while updates for the same path are serialized within this process.
+    The repository does not cache. Every read returns a new validated snapshot.
     """
 
     def __init__(self, path: str | Path):
         self.path = Path(path).expanduser().resolve(strict=False)
-        self._lock = _lock_for_path(self.path)
 
     def load_raw(self) -> PersistedConfigSnapshot:
         """Load the persisted form without resolving secret references."""
-        with self._lock:
-            return _read_snapshot(self.path)
+        return _read_snapshot(self.path)
 
     def load_effective(self) -> EffectiveConfigSnapshot:
         """Load an isolated runtime snapshot with ``${VAR}`` references resolved."""
@@ -184,17 +158,16 @@ class FileConfigRepository:
         expected_revision: str | None = None,
     ) -> PersistedConfigSnapshot:
         """Atomically save a complete config, optionally rejecting stale writes."""
-        with self._lock:
-            current = _read_snapshot(self.path)
-            if expected_revision is not None and current.revision != expected_revision:
-                raise ConfigConflictError(
-                    f"Config changed since revision {expected_revision}; "
-                    f"current revision is {current.revision}"
-                )
-            data = _config_data(config)
-            _validate_config_data(data, self.path)
-            _write_config_atomic(self.path, data)
-            return _read_snapshot(self.path)
+        current = _read_snapshot(self.path)
+        if expected_revision is not None and current.revision != expected_revision:
+            raise ConfigConflictError(
+                f"Config changed since revision {expected_revision}; "
+                f"current revision is {current.revision}"
+            )
+        data = _config_data(config)
+        _validate_config_data(data, self.path)
+        _write_config_atomic(self.path, data)
+        return _read_snapshot(self.path)
 
     def update(
         self,
@@ -203,26 +176,25 @@ class FileConfigRepository:
         expected_revision: str | None = None,
     ) -> ConfigCommit:
         """Atomically apply a mutation to the latest persisted config."""
-        with self._lock:
-            before = _read_snapshot(self.path)
-            if expected_revision is not None and before.revision != expected_revision:
-                raise ConfigConflictError(
-                    f"Config changed since revision {expected_revision}; "
-                    f"current revision is {before.revision}"
-                )
+        before = _read_snapshot(self.path)
+        if expected_revision is not None and before.revision != expected_revision:
+            raise ConfigConflictError(
+                f"Config changed since revision {expected_revision}; "
+                f"current revision is {before.revision}"
+            )
 
-            before_data = _config_data(before.config)
-            draft = before.config.model_copy(deep=True)
-            mutator(draft)
-            after_data = _config_data(draft)
-            changed = frozenset(_changed_paths(before_data, after_data))
-            if not changed:
-                return ConfigCommit(before, before, changed)
+        before_data = _config_data(before.config)
+        draft = before.config.model_copy(deep=True)
+        mutator(draft)
+        after_data = _config_data(draft)
+        changed = frozenset(_changed_paths(before_data, after_data))
+        if not changed:
+            return ConfigCommit(before, before, changed)
 
-            _validate_config_data(after_data, self.path)
-            _write_config_atomic(self.path, after_data)
-            after = _read_snapshot(self.path)
-            return ConfigCommit(before, after, changed)
+        _validate_config_data(after_data, self.path)
+        _write_config_atomic(self.path, after_data)
+        after = _read_snapshot(self.path)
+        return ConfigCommit(before, after, changed)
 
 
 def resolve_config_env_vars(config: Config) -> Config:
