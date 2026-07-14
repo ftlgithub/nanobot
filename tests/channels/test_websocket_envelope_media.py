@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.channels.websocket import (
+from nanobot.channels.websocket.runtime import (
     WebSocketChannel,
     WebSocketConfig,
 )
@@ -64,7 +64,7 @@ def _make_channel() -> WebSocketChannel:
 
 def test_max_message_bytes_default_supports_multi_image_frame() -> None:
     """Default 36 MB must comfortably hold 4 × 6 MB base64-encoded images."""
-    from nanobot.channels.websocket import WebSocketConfig
+    from nanobot.channels.websocket.runtime import WebSocketConfig
 
     default = WebSocketConfig().max_message_bytes
     # 4 images × 6 MB × 1.37 base64 overhead ≈ 33 MB

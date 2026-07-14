@@ -65,6 +65,7 @@ describe("channelSetup", () => {
     const setup = channelSetup(feature({
       name: "discord",
       display_name: "Discord",
+      webui: "webui/index.ts",
       setup: {
         fields: [{
           key: "channels.discord.token",
@@ -84,6 +85,7 @@ describe("channelSetup", () => {
     const setup = channelSetup(feature({
       name: "discord",
       display_name: "Discord",
+      webui: "webui/index.ts",
       setup: {
         fields: [{
           key: "channels.discord.groupPolicy",

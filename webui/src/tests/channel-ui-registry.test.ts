@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   channelUiContribution,
+  channelUiPresentation,
   registeredChannelUiContributions,
 } from "@/channel-plugins/registry";
 
@@ -20,7 +21,13 @@ describe("channel UI contributions", () => {
     const channels = registrations.map((entry) => entry.channel);
     expect(channels).toEqual(expect.arrayContaining(["feishu", "weixin"]));
     expect(new Set(channels).size).toBe(channels.length);
-    expect(registrations.every((entry) => entry.webui === "webui/index.tsx")).toBe(true);
+    expect(registrations.every((entry) => /^webui\/index\.tsx?$/.test(entry.webui))).toBe(true);
+    expect(channelUiContribution("slack", "webui/index.ts")?.presentation.displayName).toBe("Slack");
+  });
+
+  it("keeps aliases inside the owning channel contribution", () => {
+    expect(channelUiPresentation("lark")?.displayName).toBe("Lark");
+    expect(channelUiPresentation("wechat")?.displayName).toBe("WeChat");
   });
 
   it("keeps the core setup panel independent of concrete channel plugins", () => {

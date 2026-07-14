@@ -17,7 +17,7 @@ if not QQ_AVAILABLE:
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.qq import (
+from nanobot.channels.qq.runtime import (
     QQ_FILE_TYPE_FILE,
     QQ_FILE_TYPE_IMAGE,
     QQChannel,

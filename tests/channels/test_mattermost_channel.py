@@ -12,7 +12,7 @@ import pytest
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.mattermost import (
+from nanobot.channels.mattermost.runtime import (
     MATTERMOST_MAX_MESSAGE_LEN,
     MattermostChannel,
     MattermostConfig,
@@ -446,8 +446,8 @@ async def test_send_with_file_upload():
         "file_infos": [{"id": "file_abc", "name": "test.txt"}],
     })
 
-    with patch("nanobot.channels.mattermost.Path.exists", return_value=True):
-        with patch("nanobot.channels.mattermost.Path.read_bytes", return_value=b"data"):
+    with patch("nanobot.channels.mattermost.runtime.Path.exists", return_value=True):
+        with patch("nanobot.channels.mattermost.runtime.Path.read_bytes", return_value=b"data"):
             msg = OutboundMessage(
                 channel="mattermost",
                 chat_id="chan_1",
@@ -914,7 +914,7 @@ async def test_dm_allowlist_with_username_match():
 @pytest.mark.asyncio
 async def test_dm_allowlist_accepts_pairing_approval():
     channel, fake = _make_channel({"dm": {"policy": "allowlist", "allowFrom": ["u_allowed"]}})
-    with patch("nanobot.channels.mattermost.is_approved", return_value=True):
+    with patch("nanobot.channels.mattermost.runtime.is_approved", return_value=True):
         assert await channel._is_allowed("u_paired", "dm_chan", "dm") is True
 
 

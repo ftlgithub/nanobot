@@ -8,9 +8,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import nanobot.channels.whatsapp.runtime as whatsapp_module
 from nanobot.bus.events import OutboundMessage
-from nanobot.channels import whatsapp as whatsapp_module
-from nanobot.channels.whatsapp import WhatsAppChannel, _legacy_bridge_config_fields, _NeonizeAPI
+from nanobot.channels.whatsapp.runtime import (
+    WhatsAppChannel,
+    _legacy_bridge_config_fields,
+    _NeonizeAPI,
+)
 
 
 class _Proto:

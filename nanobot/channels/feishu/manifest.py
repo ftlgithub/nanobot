@@ -1,7 +1,7 @@
 """Dependency-free Feishu/Lark management contract."""
 
+from nanobot.channels._manifest import DIRECT_GROUP_POLICIES, field, required_fields
 from nanobot.channels.contracts import ChannelSetupSpec
-from nanobot.channels.manifests._shared import DIRECT_GROUP_POLICIES, field, required_fields
 from nanobot.channels.plugin import ChannelPlugin
 
 SETUP_SPEC = ChannelSetupSpec(
@@ -31,7 +31,7 @@ SETUP_SPEC = ChannelSetupSpec(
 PLUGIN = ChannelPlugin(
     name="feishu",
     display_name="Feishu",
-    runtime="nanobot.channels.feishu.runtime:FeishuChannel",
+    runtime="runtime:FeishuChannel",
     setup=SETUP_SPEC,
     optional_extra="feishu",
     capabilities=frozenset({"multi_instance", "qr_connect"}),

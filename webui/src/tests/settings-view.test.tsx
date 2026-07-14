@@ -533,6 +533,7 @@ describe("SettingsView Apps catalog", () => {
           features: [{
             name: "matrix",
             display_name: "Matrix",
+            webui: "webui/index.ts",
             type: "channel",
             enabled: false,
             installed: false,
@@ -549,6 +550,7 @@ describe("SettingsView Apps catalog", () => {
           features: [{
             name: "matrix",
             display_name: "Matrix",
+            webui: "webui/index.ts",
             type: "channel",
             enabled: true,
             installed: true,
@@ -566,6 +568,7 @@ describe("SettingsView Apps catalog", () => {
           features: [{
             name: "matrix",
             display_name: "Matrix",
+            webui: "webui/index.ts",
             type: "channel",
             enabled: false,
             installed: true,
@@ -1141,6 +1144,7 @@ describe("SettingsView Apps catalog", () => {
             features: [{
               name: "discord",
               display_name: "Discord",
+              webui: "webui/index.ts",
               type: "channel",
               enabled: true,
               installed: true,
@@ -1248,6 +1252,7 @@ describe("SettingsView Apps catalog", () => {
           features: [{
             name: "discord",
             display_name: "Discord",
+            webui: "webui/index.ts",
             type: "channel",
             enabled: false,
             configured: false,
@@ -1274,6 +1279,7 @@ describe("SettingsView Apps catalog", () => {
             features: [{
               name: "discord",
               display_name: "Discord",
+              webui: "webui/index.ts",
               type: "channel",
               enabled: true,
               configured: true,
@@ -1361,6 +1367,7 @@ describe("SettingsView Apps catalog", () => {
           features: [{
             name: "discord",
             display_name: "Discord",
+            webui: "webui/index.ts",
             type: "channel",
             enabled: false,
             configured: true,
@@ -1388,6 +1395,7 @@ describe("SettingsView Apps catalog", () => {
           features: [{
             name: "discord",
             display_name: "Discord",
+            webui: "webui/index.ts",
             type: "channel",
             enabled: true,
             configured: true,
@@ -1451,6 +1459,7 @@ describe("SettingsView Apps catalog", () => {
             features: [{
               name: "telegram",
               display_name: "Telegram",
+              webui: "webui/index.ts",
               type: "channel",
               enabled: false,
               installed: true,
@@ -1507,7 +1516,7 @@ describe("SettingsView Apps catalog", () => {
             features: channels.map(([name, displayName]) => ({
               name,
               display_name: displayName,
-              webui: ["feishu", "weixin"].includes(name) ? "webui/index.tsx" : undefined,
+              webui: ["feishu", "weixin"].includes(name) ? "webui/index.tsx" : "webui/index.ts",
               type: "channel",
               enabled: name === "websocket",
               installed: true,
@@ -1518,6 +1527,7 @@ describe("SettingsView Apps catalog", () => {
             })).concat(hiddenChannels.map(([name, displayName]) => ({
               name,
               display_name: displayName,
+              settings_visible: false,
               type: "channel",
               enabled: false,
               installed: true,
@@ -1560,7 +1570,7 @@ describe("SettingsView Apps catalog", () => {
             features: ["email", "feishu", "matrix", "qq"].map((name) => ({
               name,
               display_name: name === "qq" ? "QQ" : name[0].toUpperCase() + name.slice(1),
-              webui: name === "feishu" ? "webui/index.tsx" : undefined,
+              webui: name === "feishu" ? "webui/index.tsx" : "webui/index.ts",
               type: "channel",
               enabled: true,
               installed: true,
@@ -1628,6 +1638,8 @@ describe("SettingsView Apps catalog", () => {
           features: [{
             name: "websocket",
             display_name: "Websocket",
+            capabilities: ["always_enabled"],
+            webui: "webui/index.ts",
             type: "channel",
             enabled: true,
             installed: true,

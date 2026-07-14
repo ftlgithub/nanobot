@@ -17,7 +17,7 @@ from ws_test_client import http_get as _http_get
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.channels.base import BaseChannel
-from nanobot.channels.websocket import WebSocketChannel, WebSocketConfig
+from nanobot.channels.websocket.runtime import WebSocketChannel, WebSocketConfig
 from nanobot.cron.service import CronService
 from nanobot.cron.types import CronJob, CronPayload, CronSchedule
 from nanobot.optional_features import InstallResult

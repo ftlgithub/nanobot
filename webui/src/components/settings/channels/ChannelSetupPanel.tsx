@@ -157,8 +157,8 @@ export function ChannelSetupPanel({
   const enableBusy = actionKey === `enable:${feature.name}`;
   const disableBusy = actionKey === `disable:${feature.name}`;
   const missingSupport = feature.enabled && !feature.installed;
-  const requiredWebui = feature.name === "websocket";
-  const channelChecked = requiredWebui || feature.enabled;
+  const alwaysEnabled = feature.capabilities?.includes("always_enabled") ?? false;
+  const channelChecked = alwaysEnabled || feature.enabled;
   const channelBusy = enableBusy || disableBusy;
   const setup = channelSetup(feature);
   const needsSetupBeforeEnable =
@@ -166,7 +166,7 @@ export function ChannelSetupPanel({
     && feature.configured === false
     && !(uiContribution?.canConnectBeforeConfigured && setup.mode === "connect");
   const channelToggleDisabled =
-    requiredWebui
+    alwaysEnabled
     || channelBusy
     || needsSetupBeforeEnable
     || (!feature.install_supported && !feature.installed && !feature.enabled);

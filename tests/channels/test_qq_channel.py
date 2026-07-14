@@ -19,7 +19,7 @@ import aiohttp
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.qq import QQChannel, QQConfig
+from nanobot.channels.qq.runtime import QQChannel, QQConfig
 
 
 class _FakeApi:

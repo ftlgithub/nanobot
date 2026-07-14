@@ -1,7 +1,6 @@
 """Auto-discovery for built-in channel modules and external plugins."""
 from __future__ import annotations
 
-import importlib
 import pkgutil
 from typing import TYPE_CHECKING
 
@@ -10,59 +9,34 @@ from loguru import logger
 if TYPE_CHECKING:
     from nanobot.channels.base import BaseChannel
 
-_INTERNAL = frozenset({
-    "base",
-    "contracts",
-    "manager",
-    "manifests",
-    "plugin",
-    "registry",
-})
-DEFAULT_ENABLED_CHANNELS = frozenset({"websocket"})
-
-
 def channel_default_enabled(name: str) -> bool:
-    """Return the package manifest default or the legacy built-in default."""
-    from nanobot.channels.manifests import load_builtin_channel_plugin
+    """Return the default declared by a built-in package manifest."""
+    from nanobot.channels.plugin import load_builtin_channel_plugin
 
     plugin = load_builtin_channel_plugin(name)
-    if plugin is not None:
-        return plugin.default_enabled
-    return name in DEFAULT_ENABLED_CHANNELS
+    return plugin.default_enabled if plugin is not None else False
 
 
 def discover_channel_names() -> list[str]:
-    """Return legacy channel modules and self-contained channel packages."""
+    """Return self-contained built-in channel packages."""
     import nanobot.channels as pkg
-    from nanobot.channels.manifests import has_builtin_channel_package
+    from nanobot.channels.plugin import has_builtin_channel_package
 
     return [
         name
         for _, name, ispkg in pkgutil.iter_modules(pkg.__path__)
-        if (
-            name not in _INTERNAL
-            and not name.startswith("_")
-            and (not ispkg or has_builtin_channel_package(name))
-        )
+        if ispkg and has_builtin_channel_package(name)
     ]
 
 
 def load_channel_class(module_name: str) -> type[BaseChannel]:
-    """Load a package manifest runtime or inspect one legacy channel module."""
-    from nanobot.channels.manifests import load_builtin_channel_plugin
+    """Load the runtime declared by one built-in package manifest."""
+    from nanobot.channels.plugin import load_builtin_channel_plugin
 
     plugin = load_builtin_channel_plugin(module_name)
-    if plugin is not None:
-        return plugin.load_channel_class()
-
-    from nanobot.channels.base import BaseChannel as _Base
-
-    mod = importlib.import_module(f"nanobot.channels.{module_name}")
-    for attr in dir(mod):
-        obj = getattr(mod, attr)
-        if isinstance(obj, type) and issubclass(obj, _Base) and obj is not _Base:
-            return obj
-    raise ImportError(f"No BaseChannel subclass in nanobot.channels.{module_name}")
+    if plugin is None:
+        raise ImportError(f"No built-in channel package manifest for '{module_name}'")
+    return plugin.load_channel_class()
 
 
 def load_any_channel_class(name: str) -> type[BaseChannel]:

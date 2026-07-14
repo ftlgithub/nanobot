@@ -692,6 +692,7 @@ export interface NanobotFeatureInfo {
   name: string;
   display_name: string;
   capabilities?: string[];
+  settings_visible?: boolean;
   webui?: string;
   type: "channel" | "feature" | string;
   enabled: boolean;

@@ -2,11 +2,9 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { channelUiPresentation } from "@/channel-plugins/registry";
 import { ToggleButton } from "@/components/settings/ToggleButton";
-import {
-  CHANNEL_PRESENTATION,
-  type ChannelConfigField,
-} from "@/components/settings/channels/catalog";
+import type { ChannelConfigField } from "@/components/settings/channels/catalog";
 import {
   CredentialForm,
   channelValidationStatusClass,
@@ -386,7 +384,7 @@ function ChannelInstanceAvatar({
   instance: NanobotChannelInstanceInfo;
   showBrandLogos: boolean;
 }) {
-  const presentation = CHANNEL_PRESENTATION[feature.name];
+  const presentation = channelUiPresentation(feature.name, feature.webui);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const fallbackLogoUrls = useMemo(() => logoFallbackUrls(presentation?.logoUrl), [presentation?.logoUrl]);
   const { logoUrl, onLogoError, onLogoLoad } = useLogoFallback(fallbackLogoUrls);

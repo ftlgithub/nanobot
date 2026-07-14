@@ -14,7 +14,7 @@ except ImportError:
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.outbound_events import ProgressEvent
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.telegram import (
+from nanobot.channels.telegram.runtime import (
     TELEGRAM_REPLY_CONTEXT_MAX_LEN,
     TelegramChannel,
     TelegramConfig,
@@ -257,9 +257,9 @@ async def test_start_creates_separate_pools_with_proxy(monkeypatch) -> None:
     app = _FakeApp(lambda: setattr(channel, "_running", False))
     builder = _FakeBuilder(app)
 
-    monkeypatch.setattr("nanobot.channels.telegram.HTTPXRequest", _FakeHTTPXRequest)
+    monkeypatch.setattr("nanobot.channels.telegram.runtime.HTTPXRequest", _FakeHTTPXRequest)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.Application",
+        "nanobot.channels.telegram.runtime.Application",
         SimpleNamespace(builder=lambda: builder),
     )
 
@@ -298,9 +298,9 @@ async def test_start_respects_custom_pool_config(monkeypatch) -> None:
     app = _FakeApp(lambda: setattr(channel, "_running", False))
     builder = _FakeBuilder(app)
 
-    monkeypatch.setattr("nanobot.channels.telegram.HTTPXRequest", _FakeHTTPXRequest)
+    monkeypatch.setattr("nanobot.channels.telegram.runtime.HTTPXRequest", _FakeHTTPXRequest)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.Application",
+        "nanobot.channels.telegram.runtime.Application",
         SimpleNamespace(builder=lambda: builder),
     )
 
@@ -355,9 +355,9 @@ async def test_start_webhook_mode(monkeypatch) -> None:
     app = _FakeApp(lambda: setattr(channel, "_running", False))
     builder = _FakeBuilder(app)
 
-    monkeypatch.setattr("nanobot.channels.telegram.HTTPXRequest", _FakeHTTPXRequest)
+    monkeypatch.setattr("nanobot.channels.telegram.runtime.HTTPXRequest", _FakeHTTPXRequest)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.Application",
+        "nanobot.channels.telegram.runtime.Application",
         SimpleNamespace(builder=lambda: builder),
     )
 
@@ -428,7 +428,7 @@ async def test_send_text_retries_on_timeout() -> None:
 
     channel._app.bot.send_message = flaky_send
 
-    import nanobot.channels.telegram as tg_mod
+    import nanobot.channels.telegram.runtime as tg_mod
     orig_delay = tg_mod._SEND_RETRY_BASE_DELAY
     tg_mod._SEND_RETRY_BASE_DELAY = 0.01
     try:
@@ -456,7 +456,7 @@ async def test_send_text_gives_up_after_max_retries() -> None:
 
     channel._app.bot.send_message = always_timeout
 
-    import nanobot.channels.telegram as tg_mod
+    import nanobot.channels.telegram.runtime as tg_mod
     orig_delay = tg_mod._SEND_RETRY_BASE_DELAY
     tg_mod._SEND_RETRY_BASE_DELAY = 0.01
     try:
@@ -640,7 +640,7 @@ async def test_send_delta_stream_end_does_not_fallback_on_network_timeout(
         MessageBus(),
     )
     channel._app = _FakeApp(lambda: None)
-    monkeypatch.setattr("nanobot.channels.telegram._SEND_RETRY_BASE_DELAY", 0)
+    monkeypatch.setattr("nanobot.channels.telegram.runtime._SEND_RETRY_BASE_DELAY", 0)
     # _call_with_retry retries TimedOut up to 3 times, so the mock will be called
     # multiple times – but all calls must be with parse_mode="HTML" (no plain fallback).
     channel._app.bot.edit_message_text = AsyncMock(side_effect=TimedOut("network timeout"))
@@ -751,7 +751,7 @@ async def test_send_delta_stream_end_html_expansion_does_not_overflow() -> None:
     could become 4800+ chars after HTML conversion, exceeding 4096 limit.
     The fix converts to HTML first, THEN splits by 4096.
     """
-    from nanobot.channels.telegram import _markdown_to_telegram_html
+    from nanobot.channels.telegram.runtime import _markdown_to_telegram_html
 
     channel = TelegramChannel(
         TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
@@ -890,7 +890,7 @@ async def test_send_delta_incremental_edit_splits_oversized_buffer() -> None:
 @pytest.mark.asyncio
 async def test_send_delta_incremental_html_expansion_does_not_overflow() -> None:
     """Mid-stream HTML chunks stay within Telegram's rendered payload limit."""
-    from nanobot.channels.telegram import TELEGRAM_HTML_MAX_LEN
+    from nanobot.channels.telegram.runtime import TELEGRAM_HTML_MAX_LEN
 
     channel = TelegramChannel(
         TelegramConfig(enabled=True, token="123:abc", allow_from=["*"]),
@@ -1079,7 +1079,7 @@ async def test_send_remote_media_url_after_security_validation(monkeypatch) -> N
         MessageBus(),
     )
     channel._app = _FakeApp(lambda: None)
-    monkeypatch.setattr("nanobot.channels.telegram.validate_url_target", lambda url: (True, ""))
+    monkeypatch.setattr("nanobot.channels.telegram.runtime.validate_url_target", lambda url: (True, ""))
 
     await channel.send(
         OutboundMessage(
@@ -1138,7 +1138,7 @@ async def test_send_blocks_unsafe_remote_media_url(monkeypatch) -> None:
     )
     channel._app = _FakeApp(lambda: None)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.validate_url_target",
+        "nanobot.channels.telegram.runtime.validate_url_target",
         lambda url: (False, "Blocked: example.com resolves to private/internal address 127.0.0.1"),
     )
 
@@ -1360,7 +1360,7 @@ async def test_download_message_media_returns_path_when_download_succeeds(
     media_dir = tmp_path / "media" / "telegram"
     media_dir.mkdir(parents=True)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.get_media_dir",
+        "nanobot.channels.telegram.runtime.get_media_dir",
         lambda channel=None: media_dir if channel else tmp_path / "media",
     )
 
@@ -1396,7 +1396,7 @@ async def test_download_message_media_uses_file_unique_id_when_available(
     media_dir = tmp_path / "media" / "telegram"
     media_dir.mkdir(parents=True)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.get_media_dir",
+        "nanobot.channels.telegram.runtime.get_media_dir",
         lambda channel=None: media_dir if channel else tmp_path / "media",
     )
 
@@ -1445,7 +1445,7 @@ async def test_on_message_attaches_reply_to_media_when_available(monkeypatch, tm
     media_dir = tmp_path / "media" / "telegram"
     media_dir.mkdir(parents=True)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.get_media_dir",
+        "nanobot.channels.telegram.runtime.get_media_dir",
         lambda channel=None: media_dir if channel else tmp_path / "media",
     )
 
@@ -1528,7 +1528,7 @@ async def test_on_message_reply_to_caption_and_media(monkeypatch, tmp_path) -> N
     media_dir = tmp_path / "media" / "telegram"
     media_dir.mkdir(parents=True)
     monkeypatch.setattr(
-        "nanobot.channels.telegram.get_media_dir",
+        "nanobot.channels.telegram.runtime.get_media_dir",
         lambda channel=None: media_dir if channel else tmp_path / "media",
     )
 
@@ -1845,7 +1845,7 @@ async def test_send_text_does_not_fallback_on_network_timeout() -> None:
 
     channel._app.bot.send_message = always_timeout
 
-    import nanobot.channels.telegram as tg_mod
+    import nanobot.channels.telegram.runtime as tg_mod
     orig_delay = tg_mod._SEND_RETRY_BASE_DELAY
     tg_mod._SEND_RETRY_BASE_DELAY = 0.01
     try:
@@ -1882,7 +1882,7 @@ async def test_send_text_does_not_fallback_on_network_error() -> None:
 
     channel._app.bot.send_message = always_network_error
 
-    import nanobot.channels.telegram as tg_mod
+    import nanobot.channels.telegram.runtime as tg_mod
     orig_delay = tg_mod._SEND_RETRY_BASE_DELAY
     tg_mod._SEND_RETRY_BASE_DELAY = 0.01
     try:
@@ -1922,7 +1922,7 @@ async def test_send_text_falls_back_on_bad_request() -> None:
 
     channel._app.bot.send_message = html_fails
 
-    import nanobot.channels.telegram as tg_mod
+    import nanobot.channels.telegram.runtime as tg_mod
     orig_delay = tg_mod._SEND_RETRY_BASE_DELAY
     tg_mod._SEND_RETRY_BASE_DELAY = 0.01
     try:
@@ -1957,7 +1957,7 @@ async def test_send_text_bad_request_plain_fallback_exhausted() -> None:
 
     channel._app.bot.send_message = always_bad_request
 
-    import nanobot.channels.telegram as tg_mod
+    import nanobot.channels.telegram.runtime as tg_mod
     orig_delay = tg_mod._SEND_RETRY_BASE_DELAY
     tg_mod._SEND_RETRY_BASE_DELAY = 0.01
     try:
@@ -1977,7 +1977,7 @@ async def test_send_text_bad_request_plain_fallback_exhausted() -> None:
 # ---------------------------------------------------------------------------
 
 def test_markdown_to_html_headers_become_bold() -> None:
-    from nanobot.channels.telegram import _markdown_to_telegram_html
+    from nanobot.channels.telegram.runtime import _markdown_to_telegram_html
 
     assert _markdown_to_telegram_html("# Title") == "<b>Title</b>"
     assert _markdown_to_telegram_html("## Subtitle") == "<b>Subtitle</b>"
@@ -1985,7 +1985,7 @@ def test_markdown_to_html_headers_become_bold() -> None:
 
 
 def test_markdown_to_html_numbered_lists_preserved() -> None:
-    from nanobot.channels.telegram import _markdown_to_telegram_html
+    from nanobot.channels.telegram.runtime import _markdown_to_telegram_html
 
     text = "1. First\n2. Second\n3. Third"
     result = _markdown_to_telegram_html(text)
@@ -1995,7 +1995,7 @@ def test_markdown_to_html_numbered_lists_preserved() -> None:
 
 
 def test_markdown_to_html_numbered_list_normalizes_whitespace() -> None:
-    from nanobot.channels.telegram import _markdown_to_telegram_html
+    from nanobot.channels.telegram.runtime import _markdown_to_telegram_html
 
     # Extra spaces after dot should be normalized
     text = "1.   Lots of space\n2.  Two spaces"
@@ -2006,7 +2006,7 @@ def test_markdown_to_html_numbered_list_normalizes_whitespace() -> None:
 
 def test_markdown_to_html_headers_survive_html_escaping() -> None:
     """Headers containing special HTML chars should still render as bold."""
-    from nanobot.channels.telegram import _markdown_to_telegram_html
+    from nanobot.channels.telegram.runtime import _markdown_to_telegram_html
 
     result = _markdown_to_telegram_html("# A < B & C > D")
     assert "<b>A &lt; B &amp; C &gt; D</b>" == result
@@ -2014,7 +2014,7 @@ def test_markdown_to_html_headers_survive_html_escaping() -> None:
 
 def test_markdown_to_html_mixed_formatting() -> None:
     """Headers, bullets, numbered lists, and bold coexist correctly."""
-    from nanobot.channels.telegram import _markdown_to_telegram_html
+    from nanobot.channels.telegram.runtime import _markdown_to_telegram_html
 
     text = "# Overview\n\n- bullet one\n- bullet two\n\n1. step one\n2. step two\n\n**bold text**"
     result = _markdown_to_telegram_html(text)
@@ -2029,7 +2029,7 @@ def test_markdown_to_html_mixed_formatting() -> None:
 # ---------------------------------------------------------------------------
 
 def test_strip_md_block_removes_inline_formatting() -> None:
-    from nanobot.channels.telegram import _strip_md_block
+    from nanobot.channels.telegram.runtime import _strip_md_block
 
     text = "**bold** and _italic_ and ~~struck~~"
     result = _strip_md_block(text)
@@ -2037,13 +2037,13 @@ def test_strip_md_block_removes_inline_formatting() -> None:
 
 
 def test_strip_md_block_strips_headers() -> None:
-    from nanobot.channels.telegram import _strip_md_block
+    from nanobot.channels.telegram.runtime import _strip_md_block
 
     assert _strip_md_block("## Title\nBody") == "Title\nBody"
 
 
 def test_strip_md_block_converts_bullets_and_numbers() -> None:
-    from nanobot.channels.telegram import _strip_md_block
+    from nanobot.channels.telegram.runtime import _strip_md_block
 
     text = "- item a\n1. item b\n2. item c"
     result = _strip_md_block(text)
@@ -2053,7 +2053,7 @@ def test_strip_md_block_converts_bullets_and_numbers() -> None:
 
 
 def test_strip_md_block_strips_links() -> None:
-    from nanobot.channels.telegram import _strip_md_block
+    from nanobot.channels.telegram.runtime import _strip_md_block
 
     assert _strip_md_block("[click here](https://example.com)") == "click here"
 

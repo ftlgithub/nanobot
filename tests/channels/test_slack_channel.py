@@ -14,7 +14,7 @@ except ImportError:
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.slack import SLACK_MAX_MESSAGE_LEN, SlackChannel, SlackConfig
+from nanobot.channels.slack.runtime import SLACK_MAX_MESSAGE_LEN, SlackChannel, SlackConfig
 
 
 class _FakeAsyncWebClient:

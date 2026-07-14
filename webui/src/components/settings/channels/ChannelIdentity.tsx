@@ -1,10 +1,10 @@
 import { useMemo, type ReactNode } from "react";
 import type { useTranslation } from "react-i18next";
 
-import {
-  CHANNEL_PRESENTATION,
-  type ChannelConfigField,
-  type ChannelSetupPresentation,
+import { channelUiPresentation } from "@/channel-plugins/registry";
+import type {
+  ChannelConfigField,
+  ChannelSetupPresentation,
 } from "@/components/settings/channels/catalog";
 import { useLogoFallback } from "@/hooks/useLogoFallback";
 import { logoFallbackUrls } from "@/lib/provider-brand";
@@ -13,7 +13,7 @@ import type { NanobotFeatureInfo } from "@/lib/types";
 export type ChannelFilter = "all" | "on" | "off";
 
 export function channelSetup(feature: NanobotFeatureInfo): ChannelSetupPresentation {
-  const presentation = CHANNEL_PRESENTATION[feature.name]?.setup ?? {
+  const presentation = channelUiPresentation(feature.name, feature.webui)?.setup ?? {
     summary:
       "Enable turns on this channel in nanobot, but this integration still needs platform-specific setup before it can receive messages.",
     steps: [
@@ -78,7 +78,7 @@ export function ChannelLogo({
   feature: NanobotFeatureInfo;
   showBrandLogos: boolean;
 }) {
-  const presentation = CHANNEL_PRESENTATION[feature.name];
+  const presentation = channelUiPresentation(feature.name, feature.webui);
   const initials = presentation?.initials ?? feature.display_name.slice(0, 2).toUpperCase();
   const color = presentation?.color ?? "#6B7280";
   const Icon = presentation?.icon;
@@ -128,19 +128,19 @@ export function ChannelLogo({
 }
 
 export function channelDisplayName(feature: NanobotFeatureInfo): string {
-  return CHANNEL_PRESENTATION[feature.name]?.displayName ?? feature.display_name;
+  return channelUiPresentation(feature.name, feature.webui)?.displayName ?? feature.display_name;
 }
 
 export function channelDescription(feature: NanobotFeatureInfo, t: ReturnType<typeof useTranslation>["t"]): string {
   const fallback =
-    CHANNEL_PRESENTATION[feature.name]?.description ??
+    channelUiPresentation(feature.name, feature.webui)?.description ??
     `Use nanobot from ${channelDisplayName(feature)}.`;
   return t(`settings.channels.items.${feature.name}.description`, { defaultValue: fallback });
 }
 
 export function channelRequirements(feature: NanobotFeatureInfo, t: ReturnType<typeof useTranslation>["t"]): string {
   const fallback =
-    CHANNEL_PRESENTATION[feature.name]?.requirements ??
+    channelUiPresentation(feature.name, feature.webui)?.requirements ??
     "Channel credentials and gateway settings";
   return t(`settings.channels.items.${feature.name}.requirements`, { defaultValue: fallback });
 }
@@ -165,8 +165,8 @@ export function channelSearchText(feature: NanobotFeatureInfo): string {
     feature.display_name,
     feature.name,
     feature.status,
-    CHANNEL_PRESENTATION[feature.name]?.description,
-    CHANNEL_PRESENTATION[feature.name]?.requirements,
+    channelUiPresentation(feature.name, feature.webui)?.description,
+    channelUiPresentation(feature.name, feature.webui)?.requirements,
   ]
     .join(" ")
     .toLowerCase();

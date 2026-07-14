@@ -334,26 +334,32 @@ exception for malformed persisted data rather than silently changing instance
 identity. Keep metadata refresh behind `refresh_feature_metadata()` so feature
 GET requests remain read-only.
 
-Self-contained built-in channels live in `nanobot/channels/<channel>/`. Their
-dependency-free `manifest.py` exports a typed `ChannelPlugin` with the lazy
-runtime import target, setup contract, optional dependency name, capabilities,
-and optional WebUI entry path. Runtime code and platform SDKs must not be
-imported while this manifest is discovered. The package `__init__.py` must
-remain lightweight for the same reason. Channel-owned WebUI source is part of
-the Python distribution and is compiled into the shared WebUI bundle during
-release builds. The manifest path is authoritative: candidate TypeScript
-modules are bundled from the channel package, but the WebUI activates only the
-entry named by the backend feature payload. The entry exports a default
-`ChannelUiContribution`; its channel identity is derived from the package
-directory and must not be declared a second time in TypeScript.
+Every built-in channel is a self-contained package at
+`nanobot/channels/<channel>/`. At minimum it owns `__init__.py`, `manifest.py`,
+and `runtime.py`; channel-specific helpers and WebUI files stay below that same
+directory. Do not add built-in runtime modules directly under
+`nanobot/channels/`, a parallel manifest tree, or a central per-channel UI
+catalog.
 
-Legacy single-file built-ins keep their setup declarations in
-`nanobot/channels/manifests/<channel>.py` during migration. `_setup.py` resolves
-package manifests first and then this compatibility layout; do not add a
-central per-channel fallback table there. Shared declarative constructors live
-in `nanobot/channels/manifests/_shared.py`. A built-in manifest's
-`multi_instance` value must match whether its runtime channel overrides
-`instance_specs()`.
+The dependency-free `manifest.py` exports a typed `ChannelPlugin` with a
+package-relative lazy runtime target such as `runtime:TelegramChannel`, its
+setup contract, optional dependency name, capabilities, default activation,
+and optional WebUI entry path. Runtime code and platform SDKs must not be
+imported while this manifest is discovered. The package `__init__.py` keeps the
+historical import surface through lazy runtime exports for the same reason.
+
+Channel-owned WebUI source is part of the Python distribution and is compiled
+into the shared WebUI bundle during release builds. The manifest path is
+authoritative: candidate TypeScript modules are bundled from channel packages,
+but the WebUI activates only the entry named by the backend feature payload.
+The entry exports one default `ChannelUiContribution` containing the channel's
+presentation metadata and any custom panel or connection flow. Its channel
+identity is derived from the package directory and must not be declared a
+second time in TypeScript.
+
+Shared declarative manifest constructors live in
+`nanobot/channels/_manifest.py`. A built-in manifest's `multi_instance` value
+must match whether its runtime channel overrides `instance_specs()`.
 
 ### Optional (streaming)
 

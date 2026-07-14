@@ -21,7 +21,7 @@ import pytest
 from ws_test_client import InProcessHttpChannel
 from ws_test_client import http_get as _http_get
 
-from nanobot.channels.websocket import WebSocketChannel, WebSocketConfig
+from nanobot.channels.websocket.runtime import WebSocketChannel, WebSocketConfig
 from nanobot.session.manager import Session, SessionManager
 from nanobot.webui.gateway_services import build_gateway_services
 from nanobot.webui.media_api import (

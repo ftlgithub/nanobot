@@ -24,7 +24,7 @@ from websockets.asyncio.client import ClientConnection
 from websockets.datastructures import Headers
 from websockets.http11 import Request as WsRequest
 
-from nanobot.channels.websocket import WebSocketChannel
+from nanobot.channels.websocket.runtime import WebSocketChannel
 from nanobot.webui.http_utils import http_response
 
 _IN_PROCESS_HTTP_CHANNELS: dict[int, InProcessHttpChannel] = {}

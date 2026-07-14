@@ -61,6 +61,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { channelUiPresentation } from "@/channel-plugins/registry";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { SkillsCatalogSettings } from "@/components/settings/SkillsCatalogSettings";
 import { TokenUsageHeatmap } from "@/components/settings/TokenUsageHeatmap";
@@ -4884,22 +4885,9 @@ const AUTOMATION_SEARCH_FIELDS = new Set<AutomationSearchField>([
   "status",
 ]);
 
-const AUTOMATION_CHANNEL_LABELS: Record<string, string> = {
+const HOST_AUTOMATION_CHANNEL_LABELS: Record<string, string> = {
   api: "API",
   cli: "CLI",
-  dingtalk: "DingTalk",
-  discord: "Discord",
-  email: "Email",
-  feishu: "Feishu",
-  matrix: "Matrix",
-  msteams: "Microsoft Teams",
-  qq: "QQ",
-  slack: "Slack",
-  telegram: "Telegram",
-  wechat: "WeChat",
-  wecom: "WeCom",
-  weixin: "WeChat",
-  whatsapp: "WhatsApp",
 };
 
 function parseAutomationSearchQuery(query: string): AutomationSearchToken[] {
@@ -4968,7 +4956,7 @@ function automationOriginSearchParts(job: SessionAutomationJob): Array<string | 
     origin.title,
     origin.preview,
     origin.channel,
-    AUTOMATION_CHANNEL_LABELS[channel],
+    automationChannelDisplayName(channel),
   ];
 }
 
@@ -5105,9 +5093,15 @@ function automationChannelLabel(
   tx: (key: string, fallback: string, values?: Record<string, unknown>) => string,
 ): string {
   const key = channel.trim().toLowerCase();
-  return AUTOMATION_CHANNEL_LABELS[key]
-    ? tx(`settings.automations.channels.${key}`, AUTOMATION_CHANNEL_LABELS[key])
+  const displayName = automationChannelDisplayName(key);
+  return displayName
+    ? tx(`settings.automations.channels.${key}`, displayName)
     : channel;
+}
+
+function automationChannelDisplayName(channel: string): string | undefined {
+  const key = channel.trim().toLowerCase();
+  return channelUiPresentation(key)?.displayName ?? HOST_AUTOMATION_CHANNEL_LABELS[key];
 }
 
 function formatAutomationSchedule(
@@ -5325,8 +5319,6 @@ function RestartRequiredNotice({
   );
 }
 
-const HIDDEN_WEBUI_CHANNELS = new Set(["mochat"]);
-
 function ChannelsSettings({
   token,
   nanobotFeatures,
@@ -5370,7 +5362,7 @@ function ChannelsSettings({
   const [compactDetailOpen, setCompactDetailOpen] = useState(false);
   const allChannels = (nanobotFeatures?.features ?? [])
     .filter((feature) => feature.type === "channel")
-    .filter((feature) => !HIDDEN_WEBUI_CHANNELS.has(feature.name))
+    .filter((feature) => feature.settings_visible !== false)
     .filter((feature) => !normalizedQuery || channelSearchText(feature).includes(normalizedQuery))
     .sort((left, right) => {
       const rank = Number(!left.ready) - Number(!right.ready);

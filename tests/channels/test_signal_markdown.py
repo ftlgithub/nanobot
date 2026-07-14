@@ -1,6 +1,6 @@
 """Unit tests for the Signal markdown → plain text + textStyle converter."""
 
-from nanobot.channels.signal import _markdown_to_signal, _partition_styles
+from nanobot.channels.signal.runtime import _markdown_to_signal, _partition_styles
 from nanobot.utils.helpers import split_message
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from nanobot.channels.contracts import ChannelSetupSpec
-from nanobot.channels.manifests import load_builtin_setup_spec
+from nanobot.channels.plugin import load_builtin_setup_spec
 
 
 def channel_setup_spec(

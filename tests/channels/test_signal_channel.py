@@ -12,7 +12,7 @@ import pytest
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.outbound_events import ProgressEvent
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.signal import (
+from nanobot.channels.signal.runtime import (
     SignalChannel,
     SignalConfig,
     SignalDMConfig,
@@ -811,7 +811,7 @@ class TestHandleDataMessageDM:
         # subsequent message — otherwise the pairing reply loops forever.
         approved = {"+19995550002"}
         monkeypatch.setattr(
-            "nanobot.channels.signal.is_approved",
+            "nanobot.channels.signal.runtime.is_approved",
             lambda channel, sender_id: sender_id in approved,
         )
         ch = _make_channel(dm_enabled=True, dm_policy="allowlist", dm_allow_from=[])

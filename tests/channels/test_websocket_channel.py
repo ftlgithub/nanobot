@@ -23,7 +23,7 @@ from nanobot.bus.outbound_events import (
     TurnEndEvent,
 )
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.websocket import (
+from nanobot.channels.websocket.runtime import (
     WebSocketChannel,
     WebSocketConfig,
     _is_valid_chat_id,
@@ -134,7 +134,7 @@ async def test_start_extends_http_open_timeout_for_slow_settings_routes(
     bus,
     monkeypatch,
 ) -> None:
-    import nanobot.channels.websocket as websocket_module
+    import nanobot.channels.websocket.runtime as websocket_module
 
     channel = _ch(bus, port=0)
     seen: dict[str, Any] = {}

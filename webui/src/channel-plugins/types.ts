@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 
+import type { ChannelPresentation } from "@/components/settings/channels/catalog";
 import type {
   NanobotFeatureInfo,
   NanobotFeaturesPayload,
@@ -24,6 +25,8 @@ export type ChannelPluginConnectFlowProps = {
 };
 
 export type ChannelUiContribution = {
+  presentation: ChannelPresentation;
+  aliases?: Record<string, Partial<ChannelPresentation>>;
   Panel?: ComponentType<ChannelPluginPanelProps>;
   ConnectFlow?: ComponentType<ChannelPluginConnectFlowProps>;
   canConnectBeforeConfigured?: boolean;

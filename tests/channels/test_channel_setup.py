@@ -1,23 +1,24 @@
 import ast
-import pkgutil
 import subprocess
 import sys
 from pathlib import Path
 
-import nanobot.channels._setup as channel_setup_module
-import nanobot.channels.manifests as manifest_package
-from nanobot.channels._setup import channel_setup_spec
-from nanobot.channels.manifests import load_builtin_channel_plugin
-from nanobot.channels.plugin import ChannelPlugin
-from nanobot.channels.registry import channel_default_enabled
+import pytest
 
-EXPECTED_SETUP_CHANNELS = {
+import nanobot.channels._setup as channel_setup_module
+import nanobot.channels.plugin as plugin_module
+from nanobot.channels._setup import channel_setup_spec
+from nanobot.channels.plugin import ChannelPlugin, load_builtin_channel_plugin
+from nanobot.channels.registry import channel_default_enabled, discover_channel_names
+
+EXPECTED_CHANNELS = {
     "dingtalk",
     "discord",
     "email",
     "feishu",
     "matrix",
     "mattermost",
+    "mochat",
     "msteams",
     "napcat",
     "qq",
@@ -91,42 +92,39 @@ def test_webui_forms_have_writable_mattermost_and_whatsapp_contracts() -> None:
     )
 
 
-def test_all_builtin_setup_contracts_are_dependency_free_manifests() -> None:
-    legacy_manifest_names = {
-        name
-        for _, name, ispkg in pkgutil.iter_modules(
-            [str(Path(manifest_package.__file__).parent)]
-        )
-        if not name.startswith("_") and not ispkg
-    }
+def test_every_builtin_channel_is_a_self_contained_package() -> None:
     channel_dir = Path(channel_setup_module.__file__).parent
-    package_manifest_names = {
-        path.parent.name
-        for path in channel_dir.glob("*/manifest.py")
-    }
-    manifest_names = legacy_manifest_names | package_manifest_names
+    package_names = {path.parent.name for path in channel_dir.glob("*/manifest.py")}
 
     assert not hasattr(channel_setup_module, "CHANNEL_SETUP_SPECS")
-    assert manifest_names == EXPECTED_SETUP_CHANNELS
-    assert all(channel_setup_spec(name) is not None for name in manifest_names)
+    assert package_names == EXPECTED_CHANNELS
+    assert set(discover_channel_names()) == EXPECTED_CHANNELS
+    for name in EXPECTED_CHANNELS:
+        package_dir = channel_dir / name
+        assert (package_dir / "__init__.py").is_file()
+        assert (package_dir / "manifest.py").is_file()
+        assert (package_dir / "runtime.py").is_file()
+        assert not (channel_dir / f"{name}.py").exists()
 
-    feishu = channel_setup_spec("feishu")
-    assert feishu is not None and feishu.multi_instance is True
-    assert feishu.simple_required_fields == ("appId", "appSecret")
+        plugin = load_builtin_channel_plugin(name)
+        assert plugin is not None
+        assert plugin.name == name
+        assert plugin.runtime.startswith("runtime:")
+        assert plugin.setup is channel_setup_spec(name)
+        if plugin.webui is not None:
+            assert (package_dir / plugin.webui).is_file()
 
 
 def test_builtin_setup_manifests_only_import_contract_modules() -> None:
-    manifest_dir = Path(manifest_package.__file__).parent
     channel_dir = Path(channel_setup_module.__file__).parent
     allowed_imports = {
+        "nanobot.channels._manifest",
         "nanobot.channels.contracts",
-        "nanobot.channels.manifests._shared",
         "nanobot.channels.plugin",
     }
 
-    for name in EXPECTED_SETUP_CHANNELS:
-        package_manifest = channel_dir / name / "manifest.py"
-        manifest_path = package_manifest if package_manifest.is_file() else manifest_dir / f"{name}.py"
+    for name in EXPECTED_CHANNELS:
+        manifest_path = channel_dir / name / "manifest.py"
         tree = ast.parse(manifest_path.read_text(encoding="utf-8"))
         imports: set[str] = set()
         for node in tree.body:
@@ -141,13 +139,12 @@ def test_builtin_multi_instance_manifests_match_runtime_declarations() -> None:
     channel_dir = Path(channel_setup_module.__file__).parent
     manifest_multi = {
         name
-        for name in EXPECTED_SETUP_CHANNELS
+        for name in EXPECTED_CHANNELS
         if (spec := channel_setup_spec(name)) is not None and spec.multi_instance
     }
     runtime_multi: set[str] = set()
-    for name in EXPECTED_SETUP_CHANNELS:
-        package_runtime = channel_dir / name / "runtime.py"
-        runtime_path = package_runtime if package_runtime.is_file() else channel_dir / f"{name}.py"
+    for name in EXPECTED_CHANNELS:
+        runtime_path = channel_dir / name / "runtime.py"
         tree = ast.parse(runtime_path.read_text(encoding="utf-8"))
         if any(
             isinstance(node, ast.ClassDef)
@@ -165,40 +162,33 @@ def test_builtin_multi_instance_manifests_match_runtime_declarations() -> None:
 
 def test_feishu_package_manifest_owns_runtime_and_webui_metadata() -> None:
     plugin = load_builtin_channel_plugin("feishu")
-    package_dir = Path(channel_setup_module.__file__).parent / "feishu"
 
     assert plugin is not None
-    assert plugin.runtime == "nanobot.channels.feishu.runtime:FeishuChannel"
-    assert plugin.setup is channel_setup_spec("feishu")
+    assert plugin.runtime == "runtime:FeishuChannel"
     assert plugin.optional_extra == "feishu"
     assert plugin.capabilities == {"multi_instance", "qr_connect"}
     assert plugin.webui == "webui/index.tsx"
-    assert (package_dir / plugin.webui).is_file()
 
 
 def test_weixin_package_manifest_owns_runtime_and_webui_metadata() -> None:
     plugin = load_builtin_channel_plugin("weixin")
-    package_dir = Path(channel_setup_module.__file__).parent / "weixin"
 
     assert plugin is not None
-    assert plugin.runtime == "nanobot.channels.weixin.runtime:WeixinChannel"
-    assert plugin.setup is channel_setup_spec("weixin")
+    assert plugin.runtime == "runtime:WeixinChannel"
     assert plugin.optional_extra == "weixin"
     assert plugin.capabilities == {"qr_connect"}
     assert plugin.webui == "webui/index.tsx"
-    assert (package_dir / plugin.webui).is_file()
 
 
 def test_package_manifests_do_not_import_runtimes() -> None:
-    code = """
+    code = f"""
 import sys
-from nanobot.channels.manifests import load_builtin_channel_plugin
+from nanobot.channels.plugin import load_builtin_channel_plugin
 
-for name in ("feishu", "weixin"):
+for name in {sorted(EXPECTED_CHANNELS)!r}:
     plugin = load_builtin_channel_plugin(name)
     assert plugin is not None
-assert "nanobot.channels.feishu.runtime" not in sys.modules
-assert "nanobot.channels.weixin.runtime" not in sys.modules
+    assert f"nanobot.channels.{{name}}.runtime" not in sys.modules
 """
     result = subprocess.run(
         [sys.executable, "-c", code],
@@ -214,26 +204,44 @@ def test_channel_plugin_normalizes_webui_entry() -> None:
     plugin = ChannelPlugin(
         name="demo",
         display_name="Demo",
-        runtime="demo.runtime:DemoChannel",
+        runtime="runtime:DemoChannel",
         webui="webui\\index.tsx",
     )
 
     assert plugin.webui == "webui/index.tsx"
 
 
+def test_channel_plugin_rejects_runtime_outside_its_package() -> None:
+    with pytest.raises(ValueError, match="package-relative"):
+        ChannelPlugin(
+            name="demo",
+            display_name="Demo",
+            runtime="nanobot.channels.other.runtime:DemoChannel",
+        )
+
+
 def test_channel_default_enabled_uses_package_manifest(monkeypatch) -> None:
     plugin = ChannelPlugin(
         name="demo",
         display_name="Demo",
-        runtime="demo.runtime:DemoChannel",
+        runtime="runtime:DemoChannel",
         default_enabled=True,
     )
     monkeypatch.setattr(
-        manifest_package,
+        plugin_module,
         "load_builtin_channel_plugin",
         lambda name: plugin if name == "demo" else None,
     )
 
     assert channel_default_enabled("demo") is True
-    assert channel_default_enabled("websocket") is True
     assert channel_default_enabled("missing") is False
+
+
+def test_websocket_manifest_declares_the_only_default_enabled_channel() -> None:
+    enabled = {
+        name
+        for name in EXPECTED_CHANNELS
+        if (plugin := load_builtin_channel_plugin(name)) is not None and plugin.default_enabled
+    }
+
+    assert enabled == {"websocket"}

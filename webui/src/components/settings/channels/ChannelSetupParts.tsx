@@ -2,9 +2,9 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Clipboard, ExternalLink, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { channelUiPresentation } from "@/channel-plugins/registry";
 import { Button } from "@/components/ui/button";
 import {
-  CHANNEL_PRESENTATION,
   docsUrlWithBase,
   type ChannelProviderPreset,
   type ChannelSetupPresentation,
@@ -38,7 +38,7 @@ export function ChannelGuideLink({
 }) {
   const { t } = useTranslation();
   const tx = (key: string, fallback: string) => t(key, { defaultValue: fallback });
-  const presentation = CHANNEL_PRESENTATION[feature.name];
+  const presentation = channelUiPresentation(feature.name, feature.webui);
   const logoUrls = useMemo(
     () => logoFallbackUrls(setup.docsLogoUrl ?? presentation?.logoUrl),
     [presentation?.logoUrl, setup.docsLogoUrl],
@@ -121,7 +121,7 @@ export function ChannelOfficialLink({
   feature: NanobotFeatureInfo;
   setup: ChannelSetupPresentation;
 }) {
-  const presentation = CHANNEL_PRESENTATION[feature.name];
+  const presentation = channelUiPresentation(feature.name, feature.webui);
   const logoUrls = useMemo(
     () => logoFallbackUrls(setup.docsLogoUrl ?? presentation?.logoUrl),
     [presentation?.logoUrl, setup.docsLogoUrl],
@@ -209,7 +209,7 @@ export function ChannelSetupActions({
         </Button>
       ))}
       <span className="sr-only">
-        {CHANNEL_PRESENTATION[feature.name]?.displayName ?? feature.display_name}
+        {channelUiPresentation(feature.name, feature.webui)?.displayName ?? feature.display_name}
       </span>
     </div>
   );

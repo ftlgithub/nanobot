@@ -27,7 +27,7 @@ from nanobot.channels.contracts import (
     resolve_channel_action_target,
     stringify_channel_value,
 )
-from nanobot.channels.manifests import load_builtin_channel_plugin
+from nanobot.channels.plugin import load_builtin_channel_plugin
 from nanobot.channels.registry import channel_default_enabled
 from nanobot.config.schema import Config
 
@@ -475,6 +475,7 @@ def optional_features_payload(
         }
         if channel_plugin is not None:
             feature["capabilities"] = sorted(channel_plugin.capabilities)
+            feature["settings_visible"] = channel_plugin.settings_visible
             if channel_plugin.webui is not None:
                 feature["webui"] = channel_plugin.webui
 

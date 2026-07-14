@@ -23,7 +23,7 @@ if not QQ_AVAILABLE:
     pytest.skip("QQ dependencies not installed (qq-botpy)", allow_module_level=True)
 
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.qq import QQChannel, QQConfig
+from nanobot.channels.qq.runtime import QQChannel, QQConfig
 
 
 class _FakeApi:
