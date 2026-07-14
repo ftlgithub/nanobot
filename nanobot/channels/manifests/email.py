@@ -5,7 +5,7 @@ from nanobot.channels.manifests._shared import field, required_fields
 
 SETUP_SPEC = ChannelSetupSpec(
     fields={
-        "consentGranted": field("bool"),
+        "consentGranted": field("bool", default=False),
         "imapHost": field(),
         "imapPort": field("int"),
         "imapUsername": field(),
@@ -17,8 +17,8 @@ SETUP_SPEC = ChannelSetupSpec(
         "fromAddress": field(),
         "pollIntervalSeconds": field("int"),
         "allowFrom": field("list"),
-        "verifyDkim": field("bool"),
-        "verifySpf": field("bool"),
+        "verifyDkim": field("bool", default=True),
+        "verifySpf": field("bool", default=True),
     },
     required=required_fields(
         "consentGranted",

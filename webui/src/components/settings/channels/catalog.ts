@@ -28,7 +28,21 @@ export type ChannelSetupPresentation = {
   presets?: ChannelProviderPreset[];
 };
 
-type ChannelCatalogSetupPresentation = Omit<ChannelSetupPresentation, "officialUrl">;
+type ChannelCatalogSetupPresentation = Omit<
+  ChannelSetupPresentation,
+  "officialUrl" | "fields" | "manualFields"
+> & {
+  fields?: ChannelFieldPresentation[];
+  manualFields?: ChannelFieldPresentation[];
+};
+
+export type ChannelFieldPresentation = {
+  key: string;
+  label: string;
+  placeholder?: string;
+  help?: string;
+  choiceLabels?: Record<string, string>;
+};
 
 export type ChannelSetupAction = {
   id: string;
@@ -61,35 +75,31 @@ export type ChannelConfigOption = {
   label: string;
 };
 
-const GROUP_BEHAVIOR_OPTIONS: ChannelConfigOption[] = [
-  { value: "mention", label: "Mention only" },
-  { value: "open", label: "All messages" },
-];
+const GROUP_BEHAVIOR_LABELS = {
+  mention: "Mention only",
+  open: "All messages",
+  allowlist: "Allowlist",
+};
 
-const GROUP_BEHAVIOR_ALLOWLIST_OPTIONS: ChannelConfigOption[] = [
-  ...GROUP_BEHAVIOR_OPTIONS,
-  { value: "allowlist", label: "Allowlist" },
-];
+const FEISHU_REGION_LABELS = {
+  feishu: "Feishu",
+  lark: "Lark",
+};
 
-const FEISHU_REGION_OPTIONS: ChannelConfigOption[] = [
-  { value: "feishu", label: "Feishu" },
-  { value: "lark", label: "Lark" },
-];
+const BOOLEAN_LABELS = {
+  true: "On",
+  false: "Off",
+};
 
-const BOOLEAN_OPTIONS: ChannelConfigOption[] = [
-  { value: "true", label: "On" },
-  { value: "false", label: "Off" },
-];
+const CONSENT_LABELS = {
+  true: "Granted",
+  false: "Not granted",
+};
 
-const CONSENT_OPTIONS: ChannelConfigOption[] = [
-  { value: "true", label: "Granted" },
-  { value: "false", label: "Not granted" },
-];
-
-const QQ_MESSAGE_FORMAT_OPTIONS: ChannelConfigOption[] = [
-  { value: "plain", label: "Plain text" },
-  { value: "markdown", label: "Markdown" },
-];
+const QQ_MESSAGE_FORMAT_LABELS = {
+  plain: "Plain text",
+  markdown: "Markdown",
+};
 
 const NANOBOT_DOCS_URL = "https://nanobot.wiki/docs/latest";
 const CHAT_APPS_DOCS_URL = `${NANOBOT_DOCS_URL}/getting-started/chat-apps`;
@@ -221,22 +231,18 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.telegram.token",
           label: "Bot token",
           placeholder: "123456:ABC...",
-          secret: true,
           help: "Create it with BotFather.",
         },
         {
           key: "channels.telegram.allowFrom",
           label: "Allowed users",
           placeholder: "* or Telegram user IDs",
-          optional: true,
           help: "Leave empty to use pairing codes.",
         },
         {
           key: "channels.telegram.groupPolicy",
           label: "Group behavior",
-          defaultValue: "mention",
-          options: GROUP_BEHAVIOR_OPTIONS,
-          optional: true,
+          choiceLabels: GROUP_BEHAVIOR_LABELS,
         },
       ],
     },
@@ -273,28 +279,22 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.feishu.appSecret",
           label: "App Secret",
           placeholder: "Leave blank to keep current secret",
-          secret: true,
           help: "Paste a new App Secret only when rotating credentials.",
         },
         {
           key: "channels.feishu.domain",
           label: "Region",
-          defaultValue: "feishu",
-          options: FEISHU_REGION_OPTIONS,
-          optional: true,
+          choiceLabels: FEISHU_REGION_LABELS,
         },
         {
           key: "channels.feishu.groupPolicy",
           label: "Group behavior",
-          defaultValue: "mention",
-          options: GROUP_BEHAVIOR_OPTIONS,
-          optional: true,
+          choiceLabels: GROUP_BEHAVIOR_LABELS,
         },
         {
           key: "channels.feishu.allowFrom",
           label: "Allowed users",
           placeholder: "User IDs, comma separated",
-          optional: true,
         },
       ],
     },
@@ -331,22 +331,18 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.slack.appToken",
           label: "App token",
           placeholder: "xapp-...",
-          secret: true,
           help: "Create this from Slack Socket Mode.",
         },
         {
           key: "channels.slack.botToken",
           label: "Bot token",
           placeholder: "xoxb-...",
-          secret: true,
           help: "Use the bot token after installing the Slack app.",
         },
         {
           key: "channels.slack.groupPolicy",
           label: "Group behavior",
-          defaultValue: "mention",
-          options: GROUP_BEHAVIOR_ALLOWLIST_OPTIONS,
-          optional: true,
+          choiceLabels: GROUP_BEHAVIOR_LABELS,
         },
       ],
     },
@@ -376,22 +372,18 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.discord.token",
           label: "Bot token",
           placeholder: "Discord bot token",
-          secret: true,
           help: "Create it from the Bot page in Discord Developer Portal.",
         },
         {
           key: "channels.discord.allowChannels",
           label: "Allowed channels",
           placeholder: "Channel IDs, comma separated",
-          optional: true,
           help: "Leave empty to allow any channel the bot can read.",
         },
         {
           key: "channels.discord.groupPolicy",
           label: "Group behavior",
-          defaultValue: "mention",
-          options: GROUP_BEHAVIOR_OPTIONS,
-          optional: true,
+          choiceLabels: GROUP_BEHAVIOR_LABELS,
         },
       ],
     },
@@ -422,8 +414,7 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
         {
           key: "channels.email.consentGranted",
           label: "Consent granted",
-          defaultValue: "false",
-          options: CONSENT_OPTIONS,
+          choiceLabels: CONSENT_LABELS,
           help: "Required safety switch. Leave false until this bot mailbox is intentionally connected.",
         },
         {
@@ -440,7 +431,6 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.email.imapPassword",
           label: "IMAP password",
           placeholder: "App password",
-          secret: true,
           help: "Use an app password when your mail provider requires one.",
         },
         {
@@ -457,56 +447,43 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.email.smtpPassword",
           label: "SMTP password",
           placeholder: "App password",
-          secret: true,
           help: "Usually the same app password used for IMAP.",
         },
         {
           key: "channels.email.imapPort",
           label: "IMAP port",
           placeholder: "993",
-          inputType: "number",
-          optional: true,
         },
         {
           key: "channels.email.smtpPort",
           label: "SMTP port",
           placeholder: "587",
-          inputType: "number",
-          optional: true,
         },
         {
           key: "channels.email.fromAddress",
           label: "From address",
           placeholder: "bot@example.com",
-          optional: true,
         },
         {
           key: "channels.email.pollIntervalSeconds",
           label: "Poll interval",
           placeholder: "30",
-          inputType: "number",
-          optional: true,
         },
         {
           key: "channels.email.allowFrom",
           label: "Allowed senders",
           placeholder: "Email addresses, comma separated",
-          optional: true,
           help: "Leave empty to require pairing before a sender can use email.",
         },
         {
           key: "channels.email.verifyDkim",
           label: "Verify DKIM",
-          defaultValue: "true",
-          options: BOOLEAN_OPTIONS,
-          optional: true,
+          choiceLabels: BOOLEAN_LABELS,
         },
         {
           key: "channels.email.verifySpf",
           label: "Verify SPF",
-          defaultValue: "true",
-          options: BOOLEAN_OPTIONS,
-          optional: true,
+          choiceLabels: BOOLEAN_LABELS,
         },
       ],
     },
@@ -545,31 +522,24 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.matrix.password",
           label: "Password",
           placeholder: "••••••",
-          secret: true,
-          optional: true,
           help: "Use either password login or access token login.",
         },
         {
           key: "channels.matrix.accessToken",
           label: "Access token",
           placeholder: "Optional token login",
-          secret: true,
-          optional: true,
           help: "Preferred when your Matrix client exposes an access token.",
         },
         {
           key: "channels.matrix.deviceId",
           label: "Device ID",
           placeholder: "Required with an access token",
-          optional: true,
           help: "Copy the device ID associated with the access token. Password login does not need it.",
         },
         {
           key: "channels.matrix.groupPolicy",
           label: "Group behavior",
-          defaultValue: "open",
-          options: GROUP_BEHAVIOR_ALLOWLIST_OPTIONS,
-          optional: true,
+          choiceLabels: GROUP_BEHAVIOR_LABELS,
         },
       ],
     },
@@ -606,21 +576,17 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.mattermost.token",
           label: "Bot token",
           placeholder: "Mattermost bot token",
-          secret: true,
           help: "Create this from a Mattermost bot account.",
         },
         {
           key: "channels.mattermost.teamId",
           label: "Team ID",
           placeholder: "Optional team ID",
-          optional: true,
         },
         {
           key: "channels.mattermost.groupPolicy",
           label: "Group behavior",
-          defaultValue: "mention",
-          options: GROUP_BEHAVIOR_ALLOWLIST_OPTIONS,
-          optional: true,
+          choiceLabels: GROUP_BEHAVIOR_LABELS,
         },
       ],
     },
@@ -650,14 +616,11 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.whatsapp.allowFrom",
           label: "Allowed contacts",
           placeholder: "Phone numbers or WhatsApp IDs",
-          optional: true,
         },
         {
           key: "channels.whatsapp.groupPolicy",
           label: "Group behavior",
-          defaultValue: "open",
-          options: GROUP_BEHAVIOR_OPTIONS,
-          optional: true,
+          choiceLabels: GROUP_BEHAVIOR_LABELS,
         },
       ],
     },
@@ -692,14 +655,12 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.dingtalk.clientSecret",
           label: "Client Secret",
           placeholder: "••••••",
-          secret: true,
           help: "Copy it from the same DingTalk app credentials page.",
         },
         {
           key: "channels.dingtalk.allowFrom",
           label: "Allowed users",
           placeholder: "User IDs, comma separated",
-          optional: true,
         },
       ],
     },
@@ -734,14 +695,12 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.wecom.secret",
           label: "Secret",
           placeholder: "••••••",
-          secret: true,
           help: "Keep the WeCom bot secret private.",
         },
         {
           key: "channels.wecom.allowFrom",
           label: "Allowed users",
           placeholder: "User IDs, comma separated",
-          optional: true,
         },
       ],
     },
@@ -771,14 +730,11 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.weixin.allowFrom",
           label: "Allowed users",
           placeholder: "User IDs, comma separated",
-          optional: true,
         },
         {
           key: "channels.weixin.token",
           label: "Token",
           placeholder: "Saved by QR login",
-          secret: true,
-          optional: true,
         },
       ],
     },
@@ -813,21 +769,17 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.qq.secret",
           label: "Secret",
           placeholder: "••••••",
-          secret: true,
           help: "Save this before leaving the QQ credentials page.",
         },
         {
           key: "channels.qq.allowFrom",
           label: "Allowed users",
           placeholder: "Open IDs, comma separated",
-          optional: true,
         },
         {
           key: "channels.qq.msgFormat",
           label: "Message format",
-          defaultValue: "plain",
-          options: QQ_MESSAGE_FORMAT_OPTIONS,
-          optional: true,
+          choiceLabels: QQ_MESSAGE_FORMAT_LABELS,
         },
       ],
     },
@@ -864,26 +816,21 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.signal.daemonHost",
           label: "Daemon host",
           placeholder: "localhost",
-          optional: true,
         },
         {
           key: "channels.signal.daemonPort",
           label: "Daemon port",
           placeholder: "8080",
-          inputType: "number",
-          optional: true,
         },
         {
           key: "channels.signal.dm.allowFrom",
           label: "Allowed DMs",
           placeholder: "Phone numbers or UUIDs",
-          optional: true,
         },
         {
           key: "channels.signal.group.allowFrom",
           label: "Allowed groups",
           placeholder: "Group IDs",
-          optional: true,
         },
       ],
     },
@@ -920,26 +867,22 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.msteams.appPassword",
           label: "Client secret",
           placeholder: "••••••",
-          secret: true,
           help: "Create a client secret for the Microsoft app.",
         },
         {
           key: "channels.msteams.tenantId",
           label: "Tenant ID",
           placeholder: "Optional tenant ID",
-          optional: true,
         },
         {
           key: "channels.msteams.path",
           label: "Callback path",
           placeholder: "/api/messages",
-          optional: true,
         },
         {
           key: "channels.msteams.allowFrom",
           label: "Allowed users",
           placeholder: "Teams user IDs, comma separated",
-          optional: true,
         },
       ],
     },
@@ -974,21 +917,16 @@ export const CHANNEL_PRESENTATION: Record<string, ChannelPresentation> = {
           key: "channels.napcat.accessToken",
           label: "Access token",
           placeholder: "Optional token",
-          secret: true,
-          optional: true,
         },
         {
           key: "channels.napcat.groupPolicy",
           label: "Group behavior",
-          defaultValue: "mention",
-          options: GROUP_BEHAVIOR_OPTIONS,
-          optional: true,
+          choiceLabels: GROUP_BEHAVIOR_LABELS,
         },
         {
           key: "channels.napcat.allowFrom",
           label: "Allowed users",
           placeholder: "QQ IDs, comma separated",
-          optional: true,
         },
       ],
     },

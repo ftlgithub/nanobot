@@ -8,7 +8,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "serverUrl": field(),
         "token": field("secret"),
         "teamId": field(),
-        "groupPolicy": field("enum", choices=GROUP_POLICIES),
+        "groupPolicy": field("enum", choices=GROUP_POLICIES, default="mention"),
         "allowFrom": field("list"),
     },
     required=required_fields("serverUrl", "token"),

@@ -289,6 +289,7 @@ class WebhookChannel(BaseChannel):
                 "region": ChannelFieldSpec(
                     kind="enum",
                     choices=frozenset({"us", "eu"}),
+                    default="us",
                 ),
             },
             required=(SetupRequirement.field("token"),),
@@ -296,12 +297,14 @@ class WebhookChannel(BaseChannel):
 ```
 
 `ChannelSetupSpec` is authoritative for writable field names, field types,
-choices, required setup, secret redaction, and optional backend validation.
+choices, defaults, required setup, secret redaction, and optional backend validation.
 The settings API rejects fields outside this contract.
 
 Multi-instance plugins additionally return `ChannelInstanceSpec` objects from
 `instance_specs()` and preserve their persisted envelope in
-`update_instance_config()`. The shared contract enforces these invariants:
+`update_instance_config()`. When they expose a setup contract, they must also
+set `ChannelSetupSpec(multi_instance=True)`; nanobot rejects a setup/runtime
+instance-mode mismatch. The shared contract enforces these invariants:
 
 - every `instance_id` is non-empty and unique;
 - `runtime_name(instance_id)` is the single source of routing names, and every
@@ -331,7 +334,8 @@ Built-in channels use the same setup types but declare them in
 optional platform SDK imports so settings discovery remains lazy. `_setup.py`
 only resolves manifests and external plugin hooks; do not add a central
 per-channel fallback table there. Shared declarative constructors live in
-`nanobot/channels/manifests/_shared.py`.
+`nanobot/channels/manifests/_shared.py`. A built-in manifest's `multi_instance`
+value must match whether its runtime channel overrides `instance_specs()`.
 
 ### Optional (streaming)
 

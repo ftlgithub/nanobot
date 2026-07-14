@@ -9,6 +9,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "groupPolicy": field(
             "enum",
             choices=DIRECT_GROUP_POLICIES,
+            default="open",
             snapshot=False,
         ),
         "databasePath": field(writable=False, snapshot=False),

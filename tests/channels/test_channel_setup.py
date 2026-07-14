@@ -37,6 +37,13 @@ def test_channel_setup_spec_derives_route_and_secret_metadata() -> None:
         "groupPolicy": ("enum", {"mention", "open", "allowlist"}),
     }
     assert slack.simple_required_fields == ("appToken", "botToken")
+    assert slack.fields["groupPolicy"].default == "mention"
+    group_policy = next(
+        field
+        for field in slack.to_public_dict("slack")["fields"]
+        if field["field"] == "groupPolicy"
+    )
+    assert group_policy["default_value"] == "mention"
 
 
 def test_matrix_setup_requires_one_complete_login_method() -> None:
@@ -113,3 +120,27 @@ def test_builtin_setup_manifests_only_import_contract_modules() -> None:
             elif isinstance(node, ast.ImportFrom) and node.module:
                 imports.add(node.module)
         assert imports <= allowed_imports, f"{name} imports runtime dependencies: {imports}"
+
+
+def test_builtin_multi_instance_manifests_match_runtime_declarations() -> None:
+    channel_dir = Path(channel_setup_module.__file__).parent
+    manifest_multi = {
+        name
+        for name in EXPECTED_SETUP_CHANNELS
+        if (spec := channel_setup_spec(name)) is not None and spec.multi_instance
+    }
+    runtime_multi: set[str] = set()
+    for name in EXPECTED_SETUP_CHANNELS:
+        tree = ast.parse((channel_dir / f"{name}.py").read_text(encoding="utf-8"))
+        if any(
+            isinstance(node, ast.ClassDef)
+            and any(
+                isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and item.name == "instance_specs"
+                for item in node.body
+            )
+            for node in tree.body
+        ):
+            runtime_multi.add(name)
+
+    assert manifest_multi == runtime_multi

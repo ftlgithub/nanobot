@@ -7,7 +7,7 @@ SETUP_SPEC = ChannelSetupSpec(
     fields={
         "appToken": field("secret"),
         "botToken": field("secret"),
-        "groupPolicy": field("enum", choices=GROUP_POLICIES),
+        "groupPolicy": field("enum", choices=GROUP_POLICIES, default="mention"),
     },
     required=required_fields("appToken", "botToken"),
     official_url="https://api.slack.com/apps",

@@ -711,6 +711,7 @@ export interface ChannelSetupContractField {
   kind: "string" | "secret" | "int" | "bool" | "list" | "enum" | string;
   choices: string[];
   required: boolean;
+  default_value?: string;
 }
 
 export interface ChannelSetupContract {

@@ -8,7 +8,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "wsUrl": field(),
         "accessToken": field("secret"),
         "allowFrom": field("list"),
-        "groupPolicy": field("enum", choices=DIRECT_GROUP_POLICIES),
+        "groupPolicy": field("enum", choices=DIRECT_GROUP_POLICIES, default="mention"),
     },
     required=(required("wsUrl"),),
     official_url="https://napneko.github.io/",

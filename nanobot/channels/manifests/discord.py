@@ -8,7 +8,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "token": field("secret"),
         "allowFrom": field("list", snapshot=False),
         "allowChannels": field("list"),
-        "groupPolicy": field("enum", choices=DIRECT_GROUP_POLICIES),
+        "groupPolicy": field("enum", choices=DIRECT_GROUP_POLICIES, default="mention"),
     },
     required=(required("token"),),
     official_url="https://discord.com/developers/applications",

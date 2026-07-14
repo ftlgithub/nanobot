@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 from nanobot.channels.contracts import ChannelFieldSpec, FieldKind, SetupRequirement
 
@@ -14,12 +15,14 @@ def field(
     kind: FieldKind = "string",
     *,
     choices: Iterable[str] = (),
+    default: Any = None,
     writable: bool = True,
     snapshot: bool = True,
 ) -> ChannelFieldSpec:
     return ChannelFieldSpec(
         kind=kind,
         choices=frozenset(choices),
+        default=default,
         writable=writable,
         snapshot=snapshot,
     )

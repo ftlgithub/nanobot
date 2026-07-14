@@ -29,26 +29,23 @@ export function channelSetup(feature: NanobotFeatureInfo): ChannelSetupPresentat
   const manualFields = new Map((presentation.manualFields ?? []).map((field) => [field.key, field]));
   const authoritativeFields = contract.fields.map((field): ChannelConfigField => {
     const local = primaryFields.get(field.key) ?? manualFields.get(field.key);
-    const localOptions = new Map((local?.options ?? []).map((option) => [option.value, option]));
+    const { choiceLabels = {}, ...copy } = local ?? {};
+    const choices = field.kind === "bool" ? ["true", "false"] : field.choices;
     return {
-      ...local,
+      ...copy,
       key: field.key,
       label: local?.label ?? fieldLabel(field.field),
       secret: field.kind === "secret",
       optional: !field.required,
-      inputType: field.kind === "int" ? "number" : local?.inputType,
+      inputType: field.kind === "int" ? "number" : undefined,
+      defaultValue: field.default_value,
       options:
-        field.kind === "enum"
-          ? field.choices.map((choice) => localOptions.get(choice) ?? {
+        field.kind === "enum" || field.kind === "bool"
+          ? choices.map((choice) => ({
               value: choice,
-              label: fieldLabel(choice),
-            })
-          : field.kind === "bool"
-            ? local?.options ?? [
-                { value: "true", label: "True" },
-                { value: "false", label: "False" },
-              ]
-            : local?.options,
+              label: choiceLabels[choice] ?? fieldLabel(choice),
+            }))
+          : undefined,
     };
   });
   const manualKeys = new Set(manualFields.keys());

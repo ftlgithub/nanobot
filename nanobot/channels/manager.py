@@ -30,8 +30,8 @@ from nanobot.channels.contracts import (
     ChannelActivation,
     channel_instance_specs,
     channel_runtime_name,
-    channel_supports_multiple_instances,
     external_channel_enabled,
+    resolve_channel_action_target,
 )
 from nanobot.channels.registry import DEFAULT_ENABLED_CHANNELS
 from nanobot.config.schema import Config
@@ -229,6 +229,7 @@ class ChannelManager:
             if section is None:
                 continue
             try:
+                channel_setup_spec(name, cls)
                 specs = channel_instance_specs(cls, section)
                 runtime_specs = [
                     (channel_runtime_name(cls, spec.instance_id), spec)
@@ -368,11 +369,9 @@ class ChannelManager:
         instance_id = (instance_id or "").strip() or None
         if not name or not self._is_known_channel_name(name):
             return {"handled": False}
-        if instance_id is None:
-            from nanobot.channels.registry import discover_channel_names
+        from nanobot.channels.registry import discover_channel_names
 
-            if name in set(discover_channel_names()):
-                instance_id = "default"
+        is_builtin = name in set(discover_channel_names())
         if name == "websocket":
             return {
                 "handled": True,
@@ -393,8 +392,12 @@ class ChannelManager:
                 "requires_restart": True,
                 "message": f"{name} channel could not be loaded.",
             }
-        if instance_id is None and not channel_supports_multiple_instances(cls):
-            instance_id = "default"
+        channel_setup_spec(name, cls)
+        instance_id = resolve_channel_action_target(
+            cls,
+            instance_id,
+            allow_global_multi_instance=not is_builtin,
+        )
 
         if action == "disable":
             if instance_id is not None:

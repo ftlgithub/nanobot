@@ -306,6 +306,11 @@ class BaseChannel(ABC):
         ]
 
     @classmethod
+    def supports_multiple_instances(cls) -> bool:
+        """Return whether this channel overrides the single-instance contract."""
+        return cls.instance_specs.__func__ is not BaseChannel.instance_specs.__func__
+
+    @classmethod
     def update_instance_config(
         cls,
         section: Any,

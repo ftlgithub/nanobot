@@ -21,8 +21,8 @@ from nanobot.channels.contracts import (
     channel_instance_specs,
     channel_runtime_name,
     channel_set_config_enabled,
-    channel_supports_multiple_instances,
     channel_update_instance_config,
+    resolve_channel_action_target,
 )
 from nanobot.channels.registry import discover_channel_names
 
@@ -43,6 +43,16 @@ class _SingleChannel(BaseChannel):
 
     async def send(self, msg: OutboundMessage) -> None:
         pass
+
+
+class _MultiChannel(_SingleChannel):
+    @classmethod
+    def instance_specs(cls, section, *, enabled_only=True):
+        return []
+
+
+class _InheritedMultiChannel(_MultiChannel):
+    pass
 
 
 class _SetupChannel(_SingleChannel):
@@ -71,6 +81,7 @@ def test_management_contract_is_explicit_on_runtime_base_class() -> None:
         "refresh_feature_metadata",
         "runtime_name",
         "setup_spec",
+        "supports_multiple_instances",
         "update_instance_config",
     }
 
@@ -78,17 +89,31 @@ def test_management_contract_is_explicit_on_runtime_base_class() -> None:
 
 
 def test_multi_instance_support_follows_instance_specs_override() -> None:
-    class _MultiChannel(_SingleChannel):
-        @classmethod
-        def instance_specs(cls, section, *, enabled_only=True):
-            return []
+    assert _SingleChannel.supports_multiple_instances() is False
+    assert _MultiChannel.supports_multiple_instances() is True
+    assert _InheritedMultiChannel.supports_multiple_instances() is True
 
-    class _InheritedMultiChannel(_MultiChannel):
-        pass
 
-    assert channel_supports_multiple_instances(_SingleChannel) is False
-    assert channel_supports_multiple_instances(_MultiChannel) is True
-    assert channel_supports_multiple_instances(_InheritedMultiChannel) is True
+@pytest.mark.parametrize(
+    ("channel_cls", "requested", "allow_global", "expected"),
+    [
+        pytest.param(_SingleChannel, None, True, "default", id="external-single-default"),
+        pytest.param(_MultiChannel, None, True, None, id="external-multi-global"),
+        pytest.param(_MultiChannel, None, False, "default", id="builtin-multi-default"),
+        pytest.param(_SingleChannel, "product", True, "product", id="explicit-instance"),
+    ],
+)
+def test_channel_action_target_contract(
+    channel_cls,
+    requested,
+    allow_global,
+    expected,
+) -> None:
+    assert resolve_channel_action_target(
+        channel_cls,
+        requested,
+        allow_global_multi_instance=allow_global,
+    ) == expected
 
 
 def test_contract_module_is_not_discovered_as_a_channel() -> None:
@@ -399,3 +424,15 @@ def test_channel_setup_contract_owns_fields_and_validation() -> None:
             "required": True,
         }],
     }
+
+
+def test_channel_setup_contract_rejects_instance_mode_drift() -> None:
+    class _InvalidSetupMultiChannel(_MultiChannel):
+        name = "invalid-setup-multi"
+
+        @classmethod
+        def setup_spec(cls) -> ChannelSetupSpec:
+            return ChannelSetupSpec(fields={})
+
+    with pytest.raises(TypeError, match="multi_instance must be True"):
+        channel_setup_spec(_InvalidSetupMultiChannel.name, _InvalidSetupMultiChannel)

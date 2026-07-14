@@ -10,11 +10,13 @@ SETUP_SPEC = ChannelSetupSpec(
         "domain": field(
             "enum",
             choices={"feishu", "lark"},
+            default="feishu",
             snapshot=False,
         ),
         "groupPolicy": field(
             "enum",
             choices=DIRECT_GROUP_POLICIES,
+            default="mention",
             snapshot=False,
         ),
         "allowFrom": field("list", snapshot=False),

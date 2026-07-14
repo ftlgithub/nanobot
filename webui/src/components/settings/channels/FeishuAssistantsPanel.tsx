@@ -61,7 +61,10 @@ export function FeishuAssistantsPanel({
   const [busyInstanceId, setBusyInstanceId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const selected = selectedId ? instances.find((instance) => instance.id === selectedId) : undefined;
-  const setup = channelSetup(feature);
+  const setup = useMemo(
+    () => channelSetup(feature),
+    [feature.name, feature.setup],
+  );
   const manualFields = setup.manualFields ?? [];
   const [fieldValues, setFieldValues] = useState<Record<string, string>>(() =>
     feishuInstanceFieldValues(manualFields, selected),

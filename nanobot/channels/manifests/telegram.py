@@ -7,7 +7,7 @@ SETUP_SPEC = ChannelSetupSpec(
     fields={
         "token": field("secret"),
         "allowFrom": field("list"),
-        "groupPolicy": field("enum", choices=GROUP_POLICIES),
+        "groupPolicy": field("enum", choices=GROUP_POLICIES, default="mention"),
     },
     required=(required("token"),),
     official_url="https://t.me/BotFather",

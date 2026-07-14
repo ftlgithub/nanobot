@@ -10,7 +10,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "password": field("secret"),
         "accessToken": field("secret"),
         "deviceId": field(),
-        "groupPolicy": field("enum", choices=GROUP_POLICIES),
+        "groupPolicy": field("enum", choices=GROUP_POLICIES, default="open"),
         "allowFrom": field("list", writable=False),
     },
     required=(

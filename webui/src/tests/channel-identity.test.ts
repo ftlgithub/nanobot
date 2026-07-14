@@ -79,4 +79,30 @@ describe("channelSetup", () => {
     expect(setup.fields?.map((field) => field.key)).toEqual(["channels.discord.token"]);
     expect(setup.manualFields).toBeUndefined();
   });
+
+  it("uses backend defaults and choices with catalog presentation labels", () => {
+    const setup = channelSetup(feature({
+      name: "discord",
+      display_name: "Discord",
+      setup: {
+        fields: [{
+          key: "channels.discord.groupPolicy",
+          field: "groupPolicy",
+          kind: "enum",
+          choices: ["open"],
+          required: false,
+          default_value: "open",
+        }],
+      },
+    }));
+
+    expect(setup.fields).toEqual([
+      expect.objectContaining({
+        key: "channels.discord.groupPolicy",
+        label: "Group behavior",
+        defaultValue: "open",
+        options: [{ value: "open", label: "All messages" }],
+      }),
+    ]);
+  });
 });

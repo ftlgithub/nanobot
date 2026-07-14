@@ -8,7 +8,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "appId": field(),
         "secret": field("secret"),
         "allowFrom": field("list"),
-        "msgFormat": field("enum", choices={"plain", "markdown"}),
+        "msgFormat": field("enum", choices={"plain", "markdown"}, default="plain"),
     },
     required=required_fields("appId", "secret"),
     official_url="https://q.qq.com/",

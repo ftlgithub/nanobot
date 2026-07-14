@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsView } from "@/components/settings/SettingsView";
 import { ClientProvider } from "@/providers/ClientProvider";
-import type { SettingsPayload } from "@/lib/types";
+import type {
+  ChannelSetupContract,
+  ChannelSetupContractField,
+  SettingsPayload,
+} from "@/lib/types";
 
 function jsonResponse(body: unknown): Response {
   return {
@@ -118,6 +122,118 @@ function settingsPayload(): SettingsPayload {
       latest_url: "https://nanobot.wiki/docs/latest",
     },
   };
+}
+
+function channelSetupField(
+  channel: string,
+  field: string,
+  kind: ChannelSetupContractField["kind"] = "string",
+  options: {
+    required?: boolean;
+    choices?: string[];
+    defaultValue?: string;
+  } = {},
+): ChannelSetupContractField {
+  return {
+    key: `channels.${channel}.${field}`,
+    field,
+    kind,
+    choices: options.choices ?? [],
+    required: options.required ?? false,
+    ...(options.defaultValue === undefined ? {} : { default_value: options.defaultValue }),
+  };
+}
+
+function channelSetupContract(
+  channel: "discord" | "email" | "feishu" | "matrix" | "qq",
+): ChannelSetupContract {
+  const field = (
+    name: string,
+    kind: ChannelSetupContractField["kind"] = "string",
+    options: Parameters<typeof channelSetupField>[3] = {},
+  ) => channelSetupField(channel, name, kind, options);
+
+  switch (channel) {
+    case "discord":
+      return {
+        official_url: "https://discord.com/developers/applications",
+        fields: [
+          field("token", "secret", { required: true }),
+          field("allowFrom", "list"),
+          field("allowChannels", "list"),
+          field("groupPolicy", "enum", {
+            choices: ["mention", "open"],
+            defaultValue: "mention",
+          }),
+        ],
+      };
+    case "email":
+      return {
+        official_url: "https://support.google.com/accounts/answer/185833",
+        fields: [
+          field("consentGranted", "bool", { required: true, defaultValue: "false" }),
+          field("imapHost", "string", { required: true }),
+          field("imapPort", "int"),
+          field("imapUsername", "string", { required: true }),
+          field("imapPassword", "secret", { required: true }),
+          field("smtpHost", "string", { required: true }),
+          field("smtpPort", "int"),
+          field("smtpUsername", "string", { required: true }),
+          field("smtpPassword", "secret", { required: true }),
+          field("fromAddress"),
+          field("pollIntervalSeconds", "int"),
+          field("allowFrom", "list"),
+          field("verifyDkim", "bool", { defaultValue: "true" }),
+          field("verifySpf", "bool", { defaultValue: "true" }),
+        ],
+      };
+    case "feishu":
+      return {
+        official_url: "https://open.feishu.cn/app",
+        fields: [
+          field("appId", "string", { required: true }),
+          field("appSecret", "secret", { required: true }),
+          field("domain", "enum", {
+            choices: ["feishu", "lark"],
+            defaultValue: "feishu",
+          }),
+          field("groupPolicy", "enum", {
+            choices: ["mention", "open"],
+            defaultValue: "mention",
+          }),
+          field("allowFrom", "list"),
+          field("topicIsolation", "bool"),
+        ],
+      };
+    case "matrix":
+      return {
+        official_url: "https://matrix.org/ecosystem/clients/",
+        fields: [
+          field("homeserver", "string", { required: true }),
+          field("userId", "string", { required: true }),
+          field("password", "secret"),
+          field("accessToken", "secret"),
+          field("deviceId"),
+          field("groupPolicy", "enum", {
+            choices: ["allowlist", "mention", "open"],
+            defaultValue: "open",
+          }),
+        ],
+      };
+    case "qq":
+      return {
+        official_url: "https://q.qq.com/",
+        fields: [
+          field("appId", "string", { required: true }),
+          field("secret", "secret", { required: true }),
+          field("allowFrom", "list"),
+          field("msgFormat", "enum", {
+            choices: ["markdown", "plain"],
+            defaultValue: "plain",
+          }),
+        ],
+      };
+  }
 }
 
 function autoDynamicProviderPayload(
@@ -940,6 +1056,7 @@ describe("SettingsView Apps catalog", () => {
               status: "enabled",
               install_supported: true,
               requires_restart: true,
+              setup: channelSetupContract("discord"),
             }],
             enabled_count: 1,
           });
@@ -1047,6 +1164,7 @@ describe("SettingsView Apps catalog", () => {
             status: "not_enabled",
             install_supported: true,
             requires_restart: true,
+            setup: channelSetupContract("discord"),
           }],
           enabled_count: 0,
         });
@@ -1072,6 +1190,7 @@ describe("SettingsView Apps catalog", () => {
               status: "enabled",
               install_supported: true,
               requires_restart: true,
+              setup: channelSetupContract("discord"),
             }],
             enabled_count: 1,
             requires_restart: false,
@@ -1167,6 +1286,7 @@ describe("SettingsView Apps catalog", () => {
               "channels.discord.allowChannels",
               "channels.discord.groupPolicy",
             ],
+            setup: channelSetupContract("discord"),
           }],
           enabled_count: 0,
         });
@@ -1184,6 +1304,7 @@ describe("SettingsView Apps catalog", () => {
             status: "enabled",
             install_supported: true,
             requires_restart: true,
+            setup: channelSetupContract("discord"),
           }],
           enabled_count: 1,
           requires_restart: false,
@@ -1353,6 +1474,7 @@ describe("SettingsView Apps catalog", () => {
               status: "enabled",
               install_supported: true,
               requires_restart: true,
+              setup: channelSetupContract(name as "email" | "feishu" | "matrix" | "qq"),
             })),
             enabled_count: 4,
           });

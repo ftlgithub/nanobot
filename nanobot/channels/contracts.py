@@ -23,8 +23,8 @@ __all__ = [
     "channel_instance_config",
     "channel_instance_specs",
     "channel_runtime_name",
+    "resolve_channel_action_target",
     "channel_set_config_enabled",
-    "channel_supports_multiple_instances",
     "channel_update_instance_config",
     "channel_value_present",
     "refresh_channel_feature_metadata",
@@ -95,6 +95,7 @@ class ChannelFieldSpec:
 
     kind: FieldKind = "string"
     choices: frozenset[str] = frozenset()
+    default: Any = None
     writable: bool = True
     snapshot: bool = True
 
@@ -180,15 +181,16 @@ class ChannelSetupSpec:
         for name, field in self.fields.items():
             if not field.writable:
                 continue
-            fields.append(
-                {
-                    "key": f"channels.{channel_name}.{name}",
-                    "field": name,
-                    "kind": field.kind,
-                    "choices": sorted(field.choices),
-                    "required": name in simple_required,
-                }
-            )
+            public_field = {
+                "key": f"channels.{channel_name}.{name}",
+                "field": name,
+                "kind": field.kind,
+                "choices": sorted(field.choices),
+                "required": name in simple_required,
+            }
+            if field.default is not None:
+                public_field["default_value"] = stringify_channel_value(field.default)
+            fields.append(public_field)
         payload: dict[str, Any] = {
             "fields": fields,
         }
@@ -246,16 +248,19 @@ def channel_instance_specs(
     return specs
 
 
-def channel_supports_multiple_instances(channel_cls: type[Any]) -> bool:
-    """Return whether a channel opted into instance expansion.
-
-    The base implementation is the stable single-instance contract. Plugins
-    opt into multi-instance management by overriding ``instance_specs()``;
-    inherited overrides retain that opt-in.
-    """
-    from nanobot.channels.base import BaseChannel
-
-    return channel_cls.instance_specs.__func__ is not BaseChannel.instance_specs.__func__
+def resolve_channel_action_target(
+    channel_cls: type[Any],
+    requested_instance_id: str | None,
+    *,
+    allow_global_multi_instance: bool,
+) -> str | None:
+    """Resolve one feature action to a concrete instance or the global gate."""
+    instance_id = (requested_instance_id or "").strip() or None
+    if instance_id is not None:
+        return instance_id
+    if allow_global_multi_instance and channel_cls.supports_multiple_instances():
+        return None
+    return "default"
 
 
 def channel_instance_config(
