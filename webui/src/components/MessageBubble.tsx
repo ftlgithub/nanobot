@@ -18,9 +18,9 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { AttachmentTile } from "@/components/AttachmentTile";
-import { CliAppMentionText } from "@/components/CliAppMentionText";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { MarkdownText, preloadMarkdownText } from "@/components/MarkdownText";
+import { SlashCommandText } from "@/components/SlashCommandText";
 import {
   Tooltip,
   TooltipContent,
@@ -34,6 +34,7 @@ import { toMediaAttachment } from "@/lib/media";
 import type {
   CliAppInfo,
   McpPresetInfo,
+  SlashCommand,
   UICliAppAttachment,
   UIMcpPresetAttachment,
   UIImage,
@@ -47,6 +48,7 @@ interface MessageBubbleProps {
   showCopyAction?: boolean;
   cliApps?: CliAppInfo[];
   mcpPresets?: McpPresetInfo[];
+  slashCommands?: SlashCommand[];
   onOpenFilePreview?: (path: string) => void;
   onForkFromHere?: () => void;
 }
@@ -138,6 +140,7 @@ export function MessageBubble({
   showCopyAction = true,
   cliApps = [],
   mcpPresets = [],
+  slashCommands = [],
   onOpenFilePreview,
   onForkFromHere,
 }: MessageBubbleProps) {
@@ -180,8 +183,9 @@ export function MessageBubble({
               "text-left text-[16px]/[1.75] whitespace-pre-wrap [overflow-wrap:anywhere]",
             )}
           >
-            <CliAppMentionText
+            <SlashCommandText
               text={message.content}
+              slashCommands={slashCommands}
               cliApps={mentionCliApps}
               mcpPresets={mentionMcpPresets}
             />
