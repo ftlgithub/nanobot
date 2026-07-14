@@ -608,6 +608,64 @@ def test_plugin_setup_contract_drives_save_and_validation(
     assert validation["checks"][0]["id"] == "plugin"
 
 
+def test_generic_plugin_validation_enforces_composite_requirements(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from nanobot.config import loader
+    from nanobot.webui.channel_validation import validate_channel_config
+
+    class _CompositeSetupPlugin(_FakePlugin):
+        name = "compositeplugin"
+
+        @classmethod
+        def setup_spec(cls) -> ChannelSetupSpec:
+            return ChannelSetupSpec(
+                fields={
+                    "password": ChannelFieldSpec(kind="secret"),
+                    "accessToken": ChannelFieldSpec(kind="secret"),
+                    "deviceId": ChannelFieldSpec(),
+                },
+                required=(
+                    SetupRequirement.one_of(
+                        ("password",),
+                        ("accessToken", "deviceId"),
+                    ),
+                ),
+            )
+
+    config_path = tmp_path / "config.json"
+    save_config(Config(), config_path)
+    monkeypatch.setattr(loader, "_current_config_path", config_path)
+    monkeypatch.setattr("nanobot.channels.registry.discover_channel_names", lambda: [])
+    monkeypatch.setattr(
+        "nanobot.channels.registry.discover_plugins",
+        lambda enabled_names=None: {"compositeplugin": _CompositeSetupPlugin},
+    )
+
+    missing = validate_channel_config("compositeplugin")
+    partial = validate_channel_config(
+        "compositeplugin",
+        {"channels.compositeplugin.accessToken": "token"},
+    )
+    complete = validate_channel_config(
+        "compositeplugin",
+        {
+            "channels.compositeplugin.accessToken": "token",
+            "channels.compositeplugin.deviceId": "DEVICE",
+        },
+    )
+
+    assert missing["status"] == "needs_setup"
+    assert missing["can_enable"] is False
+    assert "password" in missing["missing_fields"]
+    assert partial["status"] == "needs_setup"
+    assert partial["can_enable"] is False
+    assert "deviceId" in partial["missing_fields"]
+    assert complete["status"] == "configured"
+    assert complete["can_enable"] is True
+
+
 def test_webui_save_rejects_duplicate_feishu_ids_without_writing(monkeypatch, tmp_path):
     from nanobot.channels.feishu import FeishuChannel
     from nanobot.config import loader

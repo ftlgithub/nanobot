@@ -110,25 +110,25 @@ def feishu_instance_specs(
             logger.warning("Skipping duplicate Feishu instance id '{}'", instance_id)
             continue
 
+        instance_ids.add(instance_id)
+        enabled = bool(config.get("enabled", defaults.get("enabled", False)))
+        if enabled_only and not enabled:
+            continue
+
         identity = feishu_app_identity_key(
             config.get("appId") or config.get("app_id"),
             config.get("domain"),
         )
-        if identity and identity in identity_owners:
-            logger.warning(
-                "Skipping Feishu instance '{}' because it uses the same app as instance '{}'",
-                instance_id,
-                identity_owners[identity],
-            )
-            continue
-
-        instance_ids.add(instance_id)
-        if identity:
+        if enabled_only and identity:
+            if identity in identity_owners:
+                logger.warning(
+                    "Skipping Feishu instance '{}' because it uses the same app as instance '{}'",
+                    instance_id,
+                    identity_owners[identity],
+                )
+                continue
             identity_owners[identity] = instance_id
 
-        enabled = bool(config.get("enabled", defaults.get("enabled", False)))
-        if enabled_only and not enabled:
-            continue
         specs.append(
             ChannelInstanceSpec(
                 instance_id=instance_id,

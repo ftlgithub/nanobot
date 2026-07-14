@@ -301,6 +301,33 @@ def test_feishu_instance_contract_skips_duplicate_app_identity() -> None:
     assert [spec.instance_id for spec in specs] == ["default"]
 
 
+def test_feishu_runtime_duplicate_ignores_disabled_identity_owner() -> None:
+    from nanobot.channels.feishu import FeishuChannel
+
+    section = {
+        "instances": [
+            {
+                "id": "default",
+                "enabled": False,
+                "appId": "cli_same",
+                "appSecret": "secret-a",
+                "domain": "feishu",
+            },
+            {
+                "id": "assistant-copy",
+                "enabled": True,
+                "appId": "cli_same",
+                "appSecret": "secret-b",
+                "domain": "feishu",
+            },
+        ]
+    }
+
+    specs = channel_instance_specs(FeishuChannel, section)
+
+    assert [spec.instance_id for spec in specs] == ["assistant-copy"]
+
+
 def test_feishu_instance_write_preserves_duplicate_app_identity() -> None:
     from nanobot.channels.feishu import FeishuChannel
 
@@ -325,14 +352,17 @@ def test_feishu_instance_write_preserves_duplicate_app_identity() -> None:
         FeishuChannel,
         section,
         False,
-        instance_id="default",
+        instance_id="assistant-copy",
     )
 
     assert [instance["id"] for instance in updated["instances"]] == [
         "default",
         "assistant-copy",
     ]
+    assert updated["instances"][0]["appSecret"] == "secret-a"
+    assert updated["instances"][1]["appId"] == "cli_same"
     assert updated["instances"][1]["appSecret"] == "secret-b"
+    assert updated["instances"][1]["enabled"] is False
 
 
 def test_channel_instance_contract_materializes_generators() -> None:

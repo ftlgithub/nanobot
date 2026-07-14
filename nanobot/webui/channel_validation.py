@@ -17,7 +17,12 @@ import httpx
 
 from nanobot.channels._setup import channel_setup_spec
 from nanobot.channels.base import BaseChannel
-from nanobot.channels.contracts import ChannelSetupSpec, channel_instance_config
+from nanobot.channels.contracts import (
+    ChannelSetupSpec,
+    channel_field_value,
+    channel_instance_config,
+    channel_value_present,
+)
 from nanobot.channels.registry import load_any_channel_class
 from nanobot.config.loader import load_config
 from nanobot.security.network import resolve_url_target
@@ -326,11 +331,15 @@ def _validate_cli_handoff(name: str, values: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_generic(name: str, values: dict[str, Any]) -> dict[str, Any]:
-    checks, missing = _required_checks(name, values)
     _, spec = _channel_contract(name)
+    checks, missing = _required_checks(name, values, setup_spec=spec)
+    if spec is not None:
+        composite_checks, composite_missing = _composite_requirement_checks(spec, values)
+        checks.extend(composite_checks)
+        missing.extend(composite_missing)
     if spec is not None and spec.required:
         checks.append(_check("manual_review", "Manual setup", "skipped", "This channel can be checked from saved fields, but not fully verified in-browser."))
-        return _status_from_checks(name, checks, missing)
+        return _status_from_checks(name, checks, list(dict.fromkeys(missing)))
     if _enabled(values):
         return _payload(name, "configured", [_check("enabled", "Enabled", "pass", "This channel is enabled.")])
     return _payload(name, "unsupported", [_check("support", "WebUI setup", "skipped", "This channel is not configurable from the WebUI yet.")])
@@ -385,10 +394,17 @@ def _merge_form_values(
     return merged
 
 
-def _required_checks(name: str, values: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+def _required_checks(
+    name: str,
+    values: dict[str, Any],
+    *,
+    setup_spec: ChannelSetupSpec | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
     checks: list[dict[str, Any]] = []
     missing: list[str] = []
-    _, spec = _channel_contract(name)
+    spec = setup_spec
+    if spec is None:
+        _, spec = _channel_contract(name)
     for field in spec.simple_required_fields if spec is not None else ():
         value = _get(values, field)
         if field == "consentGranted":
@@ -400,6 +416,56 @@ def _required_checks(name: str, values: dict[str, Any]) -> tuple[list[dict[str, 
         else:
             missing.append(field)
             checks.append(_check(f"field:{field}", _label(field), "fail", "Required."))
+    return checks, missing
+
+
+def _composite_requirement_checks(
+    setup_spec: ChannelSetupSpec,
+    values: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    checks: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for index, requirement in enumerate(setup_spec.required):
+        if requirement.simple_field is not None or requirement.is_satisfied(values):
+            continue
+
+        alternatives = [
+            (
+                alternative,
+                tuple(
+                    field
+                    for field in alternative
+                    if not channel_value_present(channel_field_value(values, field))
+                ),
+            )
+            for alternative in requirement.alternatives
+        ]
+        closest = min(
+            alternatives,
+            key=lambda candidate: (
+                len(candidate[1]),
+                -(len(candidate[0]) - len(candidate[1])),
+            ),
+            default=((), ()),
+        )[1]
+        missing.extend(closest or (f"required_setup_{index}",))
+        alternatives_label = " or ".join(
+            " + ".join(_label(field) for field in alternative)
+            for alternative in requirement.alternatives
+        )
+        message = (
+            f"Complete one of: {alternatives_label}."
+            if alternatives_label
+            else "Required setup is incomplete."
+        )
+        checks.append(
+            _check(
+                f"requirement:{index}",
+                "Required setup",
+                "fail",
+                message,
+            )
+        )
     return checks, missing
 
 
