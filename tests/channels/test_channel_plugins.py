@@ -2683,3 +2683,39 @@ async def test_notify_restart_done_waits_until_channel_starts():
     assert sent_msg.channel == "feishu"
     assert sent_msg.chat_id == "oc_123"
     assert sent_msg.content.startswith("Restart completed")
+
+
+@pytest.mark.asyncio
+async def test_restart_notice_retries_until_running_channel_accepts_delivery():
+    """A running flag must not make an early transport failure final."""
+
+    class _EventuallyDeliverableChannel(_StartableChannel):
+        def __init__(self, config, bus):
+            super().__init__(config, bus)
+            self.attempts = 0
+            self.sent: OutboundMessage | None = None
+
+        async def send(self, msg: OutboundMessage) -> None:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise RuntimeError("transport not ready")
+            self.sent = msg
+
+    fake_config = SimpleNamespace(
+        channels=ChannelsConfig(send_max_retries=1),
+        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+    )
+    mgr = ChannelManager.__new__(ChannelManager)
+    mgr.config = fake_config
+    mgr.bus = MessageBus()
+    channel = _EventuallyDeliverableChannel(fake_config, mgr.bus)
+    channel._running = True
+    mgr.channels = {"discord": channel}
+
+    notice = RestartNotice(channel="discord", chat_id="123", started_at_raw="")
+    with patch("nanobot.channels.manager._SEND_RETRY_DELAYS", (0,)):
+        await mgr._send_restart_notice_when_started(notice, timeout_s=0.1, poll_s=0.01)
+
+    assert channel.attempts == 2
+    assert channel.sent is not None
+    assert channel.sent.content == "Restart completed."

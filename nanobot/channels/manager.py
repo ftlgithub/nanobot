@@ -523,6 +523,7 @@ class ChannelManager:
                 content=format_restart_completed_message(notice.started_at_raw),
                 metadata=dict(notice.metadata or {}),
             ),
+            deadline=deadline,
         )
 
     async def stop_all(self) -> None:
@@ -822,30 +823,52 @@ class ChannelManager:
         merged = replace_outbound_event(first_msg, final_event, content=combined_content)
         return merged, non_matching
 
-    async def _send_with_retry(self, channel: BaseChannel, msg: OutboundMessage) -> None:
+    async def _send_with_retry(
+        self,
+        channel: BaseChannel,
+        msg: OutboundMessage,
+        *,
+        deadline: float | None = None,
+    ) -> None:
         """Send a message with retry on failure using exponential backoff.
+
+        When deadline is provided, retry until that monotonic time instead of
+        stopping at the configured attempt limit.
 
         Note: CancelledError is re-raised to allow graceful shutdown.
         """
         max_attempts = max(self.config.channels.send_max_retries, 1)
+        attempt = 0
 
-        for attempt in range(max_attempts):
+        while True:
+            attempt += 1
             try:
                 await self._send_once(channel, msg)
                 return  # Send succeeded
             except asyncio.CancelledError:
                 raise  # Propagate cancellation for graceful shutdown
             except Exception as e:
-                if attempt == max_attempts - 1:
+                loop = asyncio.get_running_loop()
+                exhausted = (
+                    attempt >= max_attempts
+                    if deadline is None
+                    else loop.time() >= deadline
+                )
+                if exhausted:
                     logger.exception(
                         "Failed to send to {} after {} attempts",
-                        msg.channel, max_attempts
+                        msg.channel, attempt,
                     )
                     return
-                delay = _SEND_RETRY_DELAYS[min(attempt, len(_SEND_RETRY_DELAYS) - 1)]
+                delay = _SEND_RETRY_DELAYS[min(attempt - 1, len(_SEND_RETRY_DELAYS) - 1)]
+                if deadline is not None:
+                    delay = min(delay, max(0.0, deadline - loop.time()))
+                attempt_label = str(attempt)
+                if deadline is None:
+                    attempt_label = f"{attempt}/{max_attempts}"
                 logger.warning(
-                    "Send to {} failed (attempt {}/{}): {}, retrying in {}s",
-                    msg.channel, attempt + 1, max_attempts, type(e).__name__, delay
+                    "Send to {} failed (attempt {}): {}, retrying in {}s",
+                    msg.channel, attempt_label, type(e).__name__, delay,
                 )
                 try:
                     await asyncio.sleep(delay)

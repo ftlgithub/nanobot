@@ -659,11 +659,12 @@ async def test_on_message_marks_failed_attachment_download(tmp_path, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_send_warns_when_client_not_ready() -> None:
-    # Sending without a running/ready client should be a safe no-op.
+async def test_send_raises_when_client_not_ready() -> None:
+    # The manager must be able to retry while Discord is still connecting.
     channel = DiscordChannel(DiscordConfig(enabled=True, allow_from=["*"]), MessageBus())
 
-    await channel.send(OutboundMessage(channel="discord", chat_id="123", content="hello"))
+    with pytest.raises(RuntimeError, match="client is not ready"):
+        await channel.send(OutboundMessage(channel="discord", chat_id="123", content="hello"))
 
     assert channel._typing_tasks == {}
 

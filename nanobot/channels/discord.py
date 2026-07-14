@@ -466,8 +466,7 @@ class DiscordChannel(BaseChannel):
         """Send a message through Discord using discord.py."""
         client = self._client
         if client is None or not client.is_ready():
-            self.logger.warning("client not ready; dropping outbound message")
-            return
+            raise RuntimeError("Discord client is not ready")
 
         is_progress = isinstance(msg.event, ProgressEvent)
 
