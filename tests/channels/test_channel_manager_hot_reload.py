@@ -264,3 +264,77 @@ async def test_apply_channel_feature_action_uses_channel_runtime_name(monkeypatc
     assert "multi" in manager.channels
     assert "multi.product" not in manager.channels
     assert product.is_running is False
+
+
+@pytest.mark.asyncio
+async def test_global_multi_channel_action_reconciles_all_runtimes(monkeypatch):
+    initial = Config.model_validate({
+        "channels": {
+            "websocket": {"enabled": False},
+            "multi": {
+                "enabled": True,
+                "instances": [
+                    {"id": "default", "enabled": True},
+                    {"id": "product", "enabled": True},
+                ],
+            },
+        }
+    })
+    disabled = Config.model_validate({
+        "channels": {
+            "websocket": {"enabled": False},
+            "multi": {
+                "enabled": False,
+                "instances": [
+                    {"id": "default", "enabled": True},
+                    {"id": "product", "enabled": True},
+                ],
+            },
+        }
+    })
+    enabled = Config.model_validate({
+        "channels": {
+            "websocket": {"enabled": False},
+            "multi": {
+                "enabled": True,
+                "instances": [
+                    {"id": "default", "enabled": False},
+                    {"id": "product", "enabled": True},
+                ],
+            },
+        }
+    })
+
+    import nanobot.channels.registry as registry
+
+    monkeypatch.setattr(registry, "discover_channel_names", lambda: [])
+    monkeypatch.setattr(
+        registry,
+        "discover_plugins",
+        lambda enabled_names=None: {"multi": _MultiHotChannel},
+    )
+    monkeypatch.setattr(
+        registry,
+        "discover_enabled",
+        lambda enabled_names, **_kwargs: (
+            {"multi": _MultiHotChannel} if "multi" in enabled_names else {}
+        ),
+    )
+    configs = iter([disabled, enabled])
+    monkeypatch.setattr("nanobot.config.loader.load_config", lambda: next(configs))
+
+    manager = ChannelManager(initial, MessageBus())
+    default = manager.channels["multi"]
+    product = manager.channels["multi.product"]
+
+    disabled_result = await manager.apply_channel_feature_action("disable", "multi")
+
+    assert disabled_result["requires_restart"] is False
+    assert manager.channels == {}
+    assert default.stopped.is_set()
+    assert product.stopped.is_set()
+
+    enabled_result = await manager.apply_channel_feature_action("enable", "multi")
+
+    assert enabled_result["requires_restart"] is False
+    assert set(manager.channels) == {"multi.product"}

@@ -869,9 +869,13 @@ async def test_nanobot_feature_channel_action_can_apply_without_restart(
 ) -> None:
     config_path = tmp_path / "config.json"
     _stub_matrix_feature(monkeypatch, config_path, deps=["matrix-nio>=0.25.2"])
-    calls: list[tuple[str, str, str]] = []
+    calls: list[tuple[str, str, str | None]] = []
 
-    async def channel_feature_action(action: str, name: str, instance_id: str) -> dict[str, Any]:
+    async def channel_feature_action(
+        action: str,
+        name: str,
+        instance_id: str | None,
+    ) -> dict[str, Any]:
         calls.append((action, name, instance_id))
         return {
             "handled": True,
@@ -901,7 +905,7 @@ async def test_nanobot_feature_channel_action_can_apply_without_restart(
     assert response is not None
     assert response.status_code == 200
     body = json.loads(response.body.decode())
-    assert calls == [("enable", "matrix", "")]
+    assert calls == [("enable", "matrix", None)]
     assert body["requires_restart"] is False
     assert body["restart_required_sections"] == []
     assert body["last_action"]["hot_reload"] is True

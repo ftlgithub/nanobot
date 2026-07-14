@@ -43,7 +43,11 @@ from nanobot.webui.cli_apps_api import cli_apps_action, cli_apps_payload
 from nanobot.webui.http_utils import is_local_browser_request as _is_local_browser_request
 from nanobot.webui.http_utils import query_first as _query_first
 from nanobot.webui.mcp_presets_api import mcp_presets_settings_action
-from nanobot.webui.nanobot_features_api import nanobot_features_action, nanobot_features_payload
+from nanobot.webui.nanobot_features_api import (
+    nanobot_feature_instance_target,
+    nanobot_features_action,
+    nanobot_features_payload,
+)
 from nanobot.webui.settings_api import (
     WebUISettingsError,
     create_model_configuration,
@@ -626,7 +630,7 @@ class WebUISettingsRouter:
             return payload
 
         try:
-            instance_id = (_query_first(query, "instance_id") or "").strip()
+            instance_id = nanobot_feature_instance_target(query)
             result = self._channel_feature_action(action, name, instance_id)
             if inspect.isawaitable(result):
                 result = await result

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from nanobot.channels._feishu_instances import DEFAULT_INSTANCE_ID
 from nanobot.optional_features import (
     OptionalFeatureError,
     disable_optional_feature,
@@ -19,6 +18,14 @@ def nanobot_features_payload() -> dict[str, Any]:
     return optional_features_payload()
 
 
+def nanobot_feature_instance_target(query: QueryParams) -> str | None:
+    """Preserve the difference between a global action and an explicit instance."""
+    instance_id = query_first(query, "instance_id")
+    if instance_id is None:
+        return None
+    return instance_id.strip() or None
+
+
 def nanobot_features_action(
     action: str,
     query: QueryParams,
@@ -26,7 +33,7 @@ def nanobot_features_action(
     allow_install: bool = True,
 ) -> dict[str, Any]:
     name = (query_first(query, "name") or "").strip()
-    instance_id = (query_first(query, "instance_id") or DEFAULT_INSTANCE_ID).strip()
+    instance_id = nanobot_feature_instance_target(query)
     if not name:
         raise OptionalFeatureError("missing feature name")
     if action == "enable":

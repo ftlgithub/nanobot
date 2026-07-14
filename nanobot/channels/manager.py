@@ -355,7 +355,7 @@ class ChannelManager:
         self,
         action: str,
         name: str,
-        instance_id: str = "",
+        instance_id: str | None = None,
     ) -> dict[str, Any]:
         """Apply a WebUI channel enable/disable action without restarting the gateway.
 
@@ -364,9 +364,14 @@ class ChannelManager:
         response semantics.
         """
         name = name.strip()
-        instance_id = instance_id.strip()
+        instance_id = (instance_id or "").strip() or None
         if not name or not self._is_known_channel_name(name):
             return {"handled": False}
+        if instance_id is None:
+            from nanobot.channels.registry import discover_channel_names
+
+            if name in set(discover_channel_names()):
+                instance_id = "default"
         if name == "websocket":
             return {
                 "handled": True,
@@ -389,7 +394,7 @@ class ChannelManager:
             }
 
         if action == "disable":
-            if instance_id:
+            if instance_id is not None:
                 runtime_name = channel_runtime_name(cls, instance_id)
                 runtime_names = (
                     [runtime_name]
@@ -418,7 +423,7 @@ class ChannelManager:
             return {"handled": True, "ok": False, "requires_restart": True}
 
         specs = channel_instance_specs(cls, section) if section is not None else []
-        if instance_id:
+        if instance_id is not None:
             specs = [spec for spec in specs if spec.instance_id == instance_id]
         if not specs:
             return {
@@ -473,9 +478,19 @@ class ChannelManager:
                 "message": f"{name} channel could not be started: {exc}",
             }
 
-        for runtime_name, _channel in built:
-            if runtime_name in self.channels:
-                await self._stop_channel(runtime_name)
+        runtime_names_to_replace = {runtime_name for runtime_name, _channel in built}
+        if instance_id is None:
+            runtime_names_to_replace.update(
+                runtime_name
+                for runtime_name, owner in self._channel_owners.items()
+                if owner == name
+            )
+        for runtime_name in sorted(runtime_names_to_replace):
+            if runtime_name not in self.channels:
+                continue
+            await self._stop_channel(runtime_name)
+            self.channels.pop(runtime_name, None)
+            self._channel_owners.pop(runtime_name, None)
 
         for runtime_name, channel in built:
             self.channels[runtime_name] = channel

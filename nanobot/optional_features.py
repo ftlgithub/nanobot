@@ -285,15 +285,18 @@ def set_channel_config_enabled(
     channel_cls: Any | None,
     enabled: bool,
     *,
-    instance_id: str = "default",
+    instance_id: str | None = "default",
 ) -> None:
-    """Persist channel enablement through its instance-aware config contract."""
+    """Persist one instance, or the top-level plugin gate when the target is ``None``."""
     data = read_config_data(config_path)
     channels = data.setdefault("channels", {})
     existing = channels.get(channel_name, {})
     if not isinstance(existing, dict):
         existing = {}
-    if channel_cls is None:
+    if instance_id is None:
+        existing["enabled"] = enabled
+        channels[channel_name] = existing
+    elif channel_cls is None:
         if instance_id not in {"", "default"}:
             raise OptionalFeatureError(
                 f"Channel '{channel_name}' is not importable, so instance '{instance_id}' cannot be changed",
@@ -533,7 +536,7 @@ def enable_optional_feature(
     *,
     config_path: Path | None = None,
     allow_install: bool = True,
-    instance_id: str = "default",
+    instance_id: str | None = None,
     runner: Any = run_install_command,
 ) -> dict[str, Any]:
     from nanobot.channels.registry import (
@@ -554,6 +557,7 @@ def enable_optional_feature(
         payload["requires_restart"] = False
         return payload
     config_path = config_path or get_config_path()
+    requested_instance_id = (instance_id or "").strip() or None
     extras = optional_dependency_groups()
     builtin_channels = set(discover_channel_names())
     plugin_channels = discover_plugins()
@@ -579,6 +583,8 @@ def enable_optional_feature(
             detail = f": {result.output}" if result.output else ""
             raise OptionalFeatureError(f"Failed: {failed}{detail}", status=500)
 
+    channel_cls: Any | None = None
+    target_instance_id: str | None = None
     if name in builtin_channels:
         try:
             channel_cls = load_channel_class(name)
@@ -587,33 +593,35 @@ def enable_optional_feature(
                 f"Channel '{name}' is not importable after enable: {exc}",
                 status=500,
             ) from exc
+        target_instance_id = requested_instance_id or "default"
         set_channel_config_enabled(
             config_path,
             name,
             channel_cls,
             True,
-            instance_id=instance_id,
+            instance_id=target_instance_id,
         )
         message = f"Enabled channel '{name}'"
     elif name in plugin_channels:
         channel_cls = plugin_channels[name]
+        target_instance_id = requested_instance_id
         set_channel_config_enabled(
             config_path,
             name,
             channel_cls,
             True,
-            instance_id=instance_id,
+            instance_id=target_instance_id,
         )
         message = f"Enabled channel '{name}'"
     else:
         message = f"Enabled feature '{name}'"
 
-    if name in builtin_channels or name in plugin_channels:
+    if channel_cls is not None and target_instance_id is not None:
         try:
             refresh_channel_feature_metadata(
                 channel_cls,
                 config_path,
-                instance_id=instance_id,
+                instance_id=target_instance_id,
             )
         except Exception as exc:
             logger.warning("Could not refresh {} channel metadata: {}", name, exc)
@@ -643,7 +651,7 @@ def disable_optional_feature(
     name: str,
     *,
     config_path: Path | None = None,
-    instance_id: str = "default",
+    instance_id: str | None = None,
 ) -> dict[str, Any]:
     from nanobot.channels.registry import (
         discover_channel_names,
@@ -653,6 +661,7 @@ def disable_optional_feature(
     from nanobot.config.loader import get_config_path, load_config
 
     config_path = config_path or get_config_path()
+    requested_instance_id = (instance_id or "").strip() or None
     extras = optional_dependency_groups()
     builtin_channels = set(discover_channel_names())
     plugin_channels = discover_plugins()
@@ -667,12 +676,17 @@ def disable_optional_feature(
         channel_cls = load_channel_class(name) if name in builtin_channels else plugin_channels[name]
     except ImportError:
         channel_cls = None
+    target_instance_id = (
+        requested_instance_id or "default"
+        if name in builtin_channels
+        else requested_instance_id
+    )
     set_channel_config_enabled(
         config_path,
         name,
         channel_cls,
         False,
-        instance_id=instance_id,
+        instance_id=target_instance_id,
     )
     payload = optional_features_payload(
         config=load_config(config_path),

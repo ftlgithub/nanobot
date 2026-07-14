@@ -304,6 +304,72 @@ def test_feature_payload_respects_external_plugin_top_level_gate(monkeypatch):
     assert payload["enabled_count"] == 0
 
 
+def test_external_multi_plugin_action_distinguishes_global_and_default_targets(
+    monkeypatch,
+    tmp_path,
+):
+    from nanobot.config import loader
+    from nanobot.webui.nanobot_features_api import nanobot_features_action
+
+    class _ManagedMultiPlugin(_FakeMultiChannel):
+        name = "managedmulti"
+
+        @classmethod
+        def update_instance_config(cls, section, values, *, instance_id="default"):
+            updated = dict(section)
+            instances = [dict(item) for item in section.get("instances", [])]
+            for item in instances:
+                if item.get("id") == instance_id:
+                    item.update(values)
+                    break
+            updated["instances"] = instances
+            return updated
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({
+            "channels": {
+                "managedmulti": {
+                    "enabled": True,
+                    "instances": [
+                        {"id": "default", "enabled": True, "token": "default"},
+                        {"id": "product", "enabled": True, "token": "product"},
+                    ],
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(loader, "_current_config_path", config_path)
+    monkeypatch.setattr("nanobot.channels.registry.discover_channel_names", lambda: [])
+    monkeypatch.setattr(
+        "nanobot.channels.registry.discover_plugins",
+        lambda enabled_names=None: {"managedmulti": _ManagedMultiPlugin},
+    )
+    monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
+
+    disabled = nanobot_features_action("disable", {"name": ["managedmulti"]})
+    saved = json.loads(config_path.read_text(encoding="utf-8"))["channels"]["managedmulti"]
+    assert saved["enabled"] is False
+    assert [item["enabled"] for item in saved["instances"]] == [True, True]
+    assert disabled["features"][0]["enabled"] is False
+
+    enabled = nanobot_features_action("enable", {"name": ["managedmulti"]})
+    saved = json.loads(config_path.read_text(encoding="utf-8"))["channels"]["managedmulti"]
+    assert saved["enabled"] is True
+    assert [item["enabled"] for item in saved["instances"]] == [True, True]
+    assert enabled["features"][0]["enabled"] is True
+
+    explicit = nanobot_features_action(
+        "disable",
+        {"name": ["managedmulti"], "instance_id": ["default"]},
+    )
+    saved = json.loads(config_path.read_text(encoding="utf-8"))["channels"]["managedmulti"]
+    assert saved["enabled"] is True
+    assert [item["enabled"] for item in saved["instances"]] == [False, True]
+    assert explicit["features"][0]["enabled"] is True
+
+
 def test_channel_manager_preserves_single_instance_plugin_owned_instances(monkeypatch):
     monkeypatch.setattr("nanobot.channels.registry.discover_channel_names", lambda: [])
     monkeypatch.setattr(
