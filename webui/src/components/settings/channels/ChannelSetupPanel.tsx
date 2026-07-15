@@ -150,8 +150,6 @@ export function ChannelSetupPanel({
         feature={feature}
         showBrandLogos={showBrandLogos}
         chatAppsDocsUrl={chatAppsDocsUrl}
-        actionKey={actionKey}
-        onAction={onAction}
         onFeaturesUpdate={onFeaturesUpdate}
       />
     );

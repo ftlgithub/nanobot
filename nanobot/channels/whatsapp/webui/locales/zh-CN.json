@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "连接 WhatsApp",
     "docsLabel": "打开 WhatsApp 配置指南",
+    "officialLabel": "打开 WhatsApp 帮助",
     "tryIt": "终端登录完成后，向已连接的账户发送一条 WhatsApp 私信。",
     "summary": "使用要运行机器人的 WhatsApp 账户扫描二维码即可完成连接。",
     "steps": [

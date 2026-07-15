@@ -991,7 +991,7 @@ describe("SettingsView Apps catalog", () => {
     );
     expect(screen.getAllByText("cli_def...ault").length).toBeGreaterThan(0);
     expect(screen.getByText("Advanced")).toBeInTheDocument();
-    expect(screen.getByText("Topic Isolation")).toBeInTheDocument();
+    expect(screen.getByText("Topic isolation")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Product Helper/ }));
     expect(screen.getByRole("button", { name: /Support Bot/ })).toHaveAttribute(
@@ -1061,6 +1061,15 @@ describe("SettingsView Apps catalog", () => {
     renderSettingsView({ initialSection: "channels" });
 
     expect(await screen.findByText("Default worker")).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Multi Plugin channel" })).not.toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Default worker instance" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("switch", { name: "Product worker instance" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Product worker" }));
     expect(screen.getByRole("radio", { name: "Eu" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByText("Saved")).toBeInTheDocument();

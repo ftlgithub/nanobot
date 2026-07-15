@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "Hubungkan WeChat",
     "docsLabel": "Buka panduan WeChat",
+    "officialLabel": "Buka WeChat",
     "tryIt": "Setelah login QR, kirim DM ke akun yang terhubung.",
     "summary": "WeChat login dengan kode QR dan menyimpan status akun secara lokal.",
     "steps": [

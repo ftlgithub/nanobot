@@ -15,6 +15,7 @@ from nanobot.channels.contracts import (
     ChannelActivation,
     ChannelFieldSpec,
     ChannelInstanceSpec,
+    ChannelManagementSpec,
     ChannelSetupSpec,
     SetupRequirement,
     channel_feature_instances,
@@ -26,7 +27,7 @@ from nanobot.channels.contracts import (
     resolve_channel_action_target,
 )
 from nanobot.channels.plugin import ChannelPlugin
-from nanobot.channels.registry import discover_builtin_plugins
+from nanobot.channels.registry import discover_builtin_plugins, load_channel_plugin
 
 
 class _SingleChannel(BaseChannel):
@@ -45,16 +46,6 @@ class _SingleChannel(BaseChannel):
 
     async def send(self, msg: OutboundMessage) -> None:
         pass
-
-
-class _MultiChannel(_SingleChannel):
-    @classmethod
-    def instance_specs(cls, section, *, enabled_only=True):
-        return []
-
-
-class _InheritedMultiChannel(_MultiChannel):
-    pass
 
 
 class _SetupChannel(_SingleChannel):
@@ -80,24 +71,44 @@ _SETUP_PLUGIN = ChannelPlugin(
     ),
 )
 
+_SINGLE_PLUGIN = ChannelPlugin(
+    name=_SingleChannel.name,
+    display_name=_SingleChannel.display_name,
+    runtime=f"{__name__}:_SingleChannel",
+    management=ChannelManagementSpec(default_config=_SingleChannel.default_config),
+)
 
-def test_management_contract_is_explicit_on_runtime_base_class() -> None:
+
+def test_management_contract_is_not_declared_on_runtime_base_class() -> None:
     management_hooks = {
         "feature_instances",
         "instance_specs",
-        "refresh_feature_metadata",
         "runtime_name",
         "supports_multiple_instances",
         "update_instance_config",
     }
 
-    assert management_hooks <= BaseChannel.__dict__.keys()
+    assert management_hooks.isdisjoint(BaseChannel.__dict__.keys())
+    assert "refresh_feature_metadata" in BaseChannel.__dict__
 
 
-def test_multi_instance_support_follows_instance_specs_override() -> None:
-    assert _SingleChannel.supports_multiple_instances() is False
-    assert _MultiChannel.supports_multiple_instances() is True
-    assert _InheritedMultiChannel.supports_multiple_instances() is True
+def test_multi_instance_support_is_declared_by_management_spec() -> None:
+    assert _SINGLE_PLUGIN.management.multi_instance is False
+    assert load_channel_plugin("feishu").management.multi_instance is True
+
+
+@pytest.mark.parametrize(
+    "callback",
+    [
+        "instance_specs",
+        "update_instance_config",
+        "runtime_name",
+        "feature_instances",
+    ],
+)
+def test_single_instance_management_rejects_multi_instance_callbacks(callback: str) -> None:
+    with pytest.raises(ValueError, match=callback):
+        ChannelManagementSpec(**{callback: lambda *args, **kwargs: None})
 
 
 @pytest.mark.parametrize(
@@ -194,18 +205,16 @@ def test_channel_activation_normalizes_persisted_config(
 
 
 def _instance_contract_cases():
-    from nanobot.channels.feishu import FeishuChannel
-
     return [
         pytest.param(
-            _SingleChannel,
+            _SINGLE_PLUGIN,
             {"enabled": True, "token": "saved"},
             "default",
             {"default"},
             id="single-instance-default",
         ),
         pytest.param(
-            FeishuChannel,
+            load_channel_plugin("feishu"),
             {
                 "instances": [
                     {
@@ -230,73 +239,49 @@ def _instance_contract_cases():
 
 
 @pytest.mark.parametrize(
-    ("channel_cls", "section", "target_id", "expected_ids"),
+    ("plugin", "section", "target_id", "expected_ids"),
     _instance_contract_cases(),
 )
 def test_channel_instance_contract_round_trip(
-    channel_cls,
+    plugin,
     section,
     target_id,
     expected_ids,
 ) -> None:
-    all_specs = channel_instance_specs(channel_cls, section, enabled_only=False)
-    enabled_specs = channel_instance_specs(channel_cls, section)
+    all_specs = channel_instance_specs(plugin, section, enabled_only=False)
+    enabled_specs = channel_instance_specs(plugin, section)
 
     assert {spec.instance_id for spec in all_specs} == expected_ids
     assert {spec.instance_id for spec in enabled_specs} == expected_ids
-    runtime_names = {channel_runtime_name(channel_cls, spec.instance_id) for spec in all_specs}
+    runtime_names = {channel_runtime_name(plugin, spec.instance_id) for spec in all_specs}
     assert len(runtime_names) == len(all_specs)
 
     disabled = channel_set_config_enabled(
-        channel_cls,
+        plugin,
         section,
         False,
         instance_id=target_id,
     )
     assert target_id not in {
-        spec.instance_id for spec in channel_instance_specs(channel_cls, disabled)
+        spec.instance_id for spec in channel_instance_specs(plugin, disabled)
     }
 
-    values = channel_instance_config(channel_cls, disabled, instance_id=target_id)
+    values = channel_instance_config(plugin, disabled, instance_id=target_id)
     values["contractMarker"] = "preserved"
     updated = channel_update_instance_config(
-        channel_cls,
+        plugin,
         disabled,
         values,
         instance_id=target_id,
     )
     assert channel_instance_config(
-        channel_cls,
+        plugin,
         updated,
         instance_id=target_id,
     )["contractMarker"] == "preserved"
 
 
 def test_channel_feature_instances_use_generic_setup_snapshot() -> None:
-    class _FeatureMultiChannel(_SingleChannel):
-        name = "feature-multi"
-
-        @classmethod
-        def runtime_name(cls, instance_id="default"):
-            return cls.name if instance_id == "default" else f"{cls.name}.{instance_id}"
-
-        @classmethod
-        def instance_specs(cls, section, *, enabled_only=True):
-            return [
-                ChannelInstanceSpec(item["id"], item)
-                for item in section["instances"]
-                if not enabled_only or item["enabled"]
-            ]
-
-        @classmethod
-        def feature_instances(cls, section, *, setup_spec=None):
-            return [{
-                "id": "product",
-                "display_name": "Catalog product helper",
-                "enabled": False,
-                "config_values": {"channels.feature-multi.token": "leaked"},
-            }]
-
     setup_spec = ChannelSetupSpec(
         fields={
             "token": ChannelFieldSpec(kind="secret"),
@@ -305,6 +290,30 @@ def test_channel_feature_instances_use_generic_setup_snapshot() -> None:
         },
         required=(SetupRequirement.field("token"),),
         multi_instance=True,
+    )
+    plugin = ChannelPlugin(
+        name="feature-multi",
+        display_name="Feature multi",
+        runtime=f"{__name__}:_SingleChannel",
+        setup=setup_spec,
+        management=ChannelManagementSpec(
+            multi_instance=True,
+            instance_specs=lambda section, *, enabled_only=True: [
+                ChannelInstanceSpec(item["id"], item)
+                for item in section["instances"]
+                if not enabled_only or item["enabled"]
+            ],
+            update_instance_config=lambda section, values, *, instance_id="default": section,
+            runtime_name=lambda name, instance_id: (
+                name if instance_id == "default" else f"{name}.{instance_id}"
+            ),
+            feature_instances=lambda section, *, setup_spec=None: [{
+                "id": "product",
+                "display_name": "Catalog product helper",
+                "enabled": False,
+                "config_values": {"channels.feature-multi.token": "leaked"},
+            }],
+        ),
     )
     section = {
         "instances": [
@@ -322,7 +331,7 @@ def test_channel_feature_instances_use_generic_setup_snapshot() -> None:
     }
 
     instances = channel_feature_instances(
-        _FeatureMultiChannel,
+        plugin,
         section,
         setup_spec=setup_spec,
     )
@@ -349,8 +358,6 @@ def test_channel_feature_instances_use_generic_setup_snapshot() -> None:
 
 
 def test_feishu_instance_contract_skips_duplicate_app_identity() -> None:
-    from nanobot.channels.feishu import FeishuChannel
-
     section = {
         "instances": [
             {
@@ -370,14 +377,45 @@ def test_feishu_instance_contract_skips_duplicate_app_identity() -> None:
         ]
     }
 
-    specs = channel_instance_specs(FeishuChannel, section)
+    specs = channel_instance_specs(load_channel_plugin("feishu"), section)
 
     assert [spec.instance_id for spec in specs] == ["default"]
 
 
-def test_feishu_runtime_duplicate_ignores_disabled_identity_owner() -> None:
-    from nanobot.channels.feishu import FeishuChannel
+def test_feishu_feature_state_matches_runtime_duplicate_filter() -> None:
+    section = {
+        "instances": [
+            {
+                "id": "default",
+                "enabled": True,
+                "appId": "cli_same",
+                "appSecret": "secret",
+                "domain": "feishu",
+            },
+            {
+                "id": "assistant-copy",
+                "enabled": True,
+                "appId": "cli_same",
+                "appSecret": "secret",
+                "domain": "feishu",
+            },
+        ]
+    }
 
+    instances = channel_feature_instances(
+        load_channel_plugin("feishu"),
+        section,
+        setup_spec=channel_setup_spec("feishu"),
+    )
+
+    assert instances is not None
+    assert [(item["id"], item["enabled"]) for item in instances] == [
+        ("default", True),
+        ("assistant-copy", False),
+    ]
+
+
+def test_feishu_runtime_duplicate_ignores_disabled_identity_owner() -> None:
     section = {
         "instances": [
             {
@@ -397,14 +435,12 @@ def test_feishu_runtime_duplicate_ignores_disabled_identity_owner() -> None:
         ]
     }
 
-    specs = channel_instance_specs(FeishuChannel, section)
+    specs = channel_instance_specs(load_channel_plugin("feishu"), section)
 
     assert [spec.instance_id for spec in specs] == ["assistant-copy"]
 
 
 def test_feishu_instance_write_preserves_duplicate_app_identity() -> None:
-    from nanobot.channels.feishu import FeishuChannel
-
     section = {
         "instances": [
             {
@@ -423,7 +459,7 @@ def test_feishu_instance_write_preserves_duplicate_app_identity() -> None:
     }
 
     updated = channel_set_config_enabled(
-        FeishuChannel,
+        load_channel_plugin("feishu"),
         section,
         False,
         instance_id="assistant-copy",
@@ -440,19 +476,26 @@ def test_feishu_instance_write_preserves_duplicate_app_identity() -> None:
 
 
 def test_channel_instance_contract_materializes_generators() -> None:
-    class _GeneratedChannel(_SingleChannel):
-        name = "generated"
+    def generate_specs(section, *, enabled_only=True):
+        yield ChannelInstanceSpec("default", section)
+        yield ChannelInstanceSpec("product", section)
 
-        @classmethod
-        def runtime_name(cls, instance_id="default"):
-            return cls.name if instance_id == "default" else f"{cls.name}.{instance_id}"
+    plugin = ChannelPlugin(
+        name="generated",
+        display_name="Generated",
+        runtime=f"{__name__}:_SingleChannel",
+        setup=ChannelSetupSpec(fields={}, multi_instance=True),
+        management=ChannelManagementSpec(
+            multi_instance=True,
+            instance_specs=generate_specs,
+            update_instance_config=lambda section, values, *, instance_id="default": values,
+            runtime_name=lambda name, instance_id: (
+                name if instance_id == "default" else f"{name}.{instance_id}"
+            ),
+        ),
+    )
 
-        @classmethod
-        def instance_specs(cls, section, *, enabled_only=True):
-            yield ChannelInstanceSpec("default", section)
-            yield ChannelInstanceSpec("product", section)
-
-    specs = channel_instance_specs(_GeneratedChannel, {"enabled": True})
+    specs = channel_instance_specs(plugin, {"enabled": True})
 
     assert [spec.instance_id for spec in specs] == ["default", "product"]
 
@@ -463,7 +506,7 @@ def test_single_instance_contract_preserves_plugin_owned_instances_field() -> No
         "instances": ["plugin-owned-value"],
     }
 
-    specs = channel_instance_specs(_SingleChannel, section)
+    specs = channel_instance_specs(_SINGLE_PLUGIN, section)
 
     assert specs == [ChannelInstanceSpec("default", section)]
 
@@ -484,37 +527,48 @@ def test_single_instance_contract_preserves_plugin_owned_instances_field() -> No
     ],
 )
 def test_channel_instance_contract_rejects_invalid_specs(instance_ids, message) -> None:
-    class _InvalidChannel(_SingleChannel):
-        name = "invalid"
-
-        @classmethod
-        def runtime_name(cls, instance_id="default"):
-            return cls.name
-
-        @classmethod
-        def instance_specs(cls, section, *, enabled_only=True):
-            return [ChannelInstanceSpec(instance_id, {}) for instance_id in instance_ids]
+    plugin = ChannelPlugin(
+        name="invalid",
+        display_name="Invalid",
+        runtime=f"{__name__}:_SingleChannel",
+        setup=ChannelSetupSpec(fields={}, multi_instance=True),
+        management=ChannelManagementSpec(
+            multi_instance=True,
+            instance_specs=lambda section, *, enabled_only=True: [
+                ChannelInstanceSpec(instance_id, {}) for instance_id in instance_ids
+            ],
+            update_instance_config=lambda section, values, *, instance_id="default": values,
+            runtime_name=lambda name, instance_id: name,
+        ),
+    )
 
     with pytest.raises(ValueError, match=message):
-        channel_instance_specs(_InvalidChannel, {"enabled": True})
+        channel_instance_specs(plugin, {"enabled": True})
 
 
 def test_channel_instance_contract_rejects_runtime_name_outside_namespace() -> None:
-    class _InvalidChannel(_SingleChannel):
-        name = "invalid"
-
-        @classmethod
-        def runtime_name(cls, instance_id="default"):
-            return "other"
+    plugin = ChannelPlugin(
+        name="invalid",
+        display_name="Invalid",
+        runtime=f"{__name__}:_SingleChannel",
+        setup=ChannelSetupSpec(fields={}, multi_instance=True),
+        management=ChannelManagementSpec(
+            multi_instance=True,
+            instance_specs=lambda section, *, enabled_only=True: [
+                ChannelInstanceSpec("default", section)
+            ],
+            update_instance_config=lambda section, values, *, instance_id="default": values,
+            runtime_name=lambda name, instance_id: "other",
+        ),
+    )
 
     with pytest.raises(ValueError, match="must be scoped under 'invalid'"):
-        channel_instance_specs(_InvalidChannel, {"enabled": True})
+        channel_instance_specs(plugin, {"enabled": True})
 
 
 def test_channel_setup_contract_owns_fields_and_validation() -> None:
     spec = channel_setup_spec(
         _SetupChannel.name,
-        _SetupChannel,
         plugin=_SETUP_PLUGIN,
     )
 
@@ -535,19 +589,15 @@ def test_channel_setup_contract_owns_fields_and_validation() -> None:
 
 
 def test_channel_setup_contract_rejects_instance_mode_drift() -> None:
-    class _InvalidSetupMultiChannel(_MultiChannel):
-        name = "invalid_setup_multi"
-
-    plugin = ChannelPlugin(
-        name=_InvalidSetupMultiChannel.name,
-        display_name=_InvalidSetupMultiChannel.display_name,
-        runtime=f"{__name__}:_InvalidSetupMultiChannel",
-        setup=ChannelSetupSpec(fields={}),
-    )
-
     with pytest.raises(TypeError, match=r"ChannelPlugin\.setup\.multi_instance.*must be True"):
-        channel_setup_spec(
-            _InvalidSetupMultiChannel.name,
-            _InvalidSetupMultiChannel,
-            plugin=plugin,
+        ChannelPlugin(
+            name="invalid_setup_multi",
+            display_name="Invalid setup multi",
+            runtime=f"{__name__}:_SingleChannel",
+            setup=ChannelSetupSpec(fields={}),
+            management=ChannelManagementSpec(
+                multi_instance=True,
+                instance_specs=lambda section, *, enabled_only=True: [],
+                update_instance_config=lambda section, values, *, instance_id="default": values,
+            ),
         )

@@ -54,8 +54,6 @@ export function ChannelInstancesPanel({
   showBrandLogos,
   chatAppsDocsUrl,
   instances: providedInstances,
-  actionKey,
-  onAction,
   onFeaturesUpdate,
   customization = {},
 }: {
@@ -64,8 +62,6 @@ export function ChannelInstancesPanel({
   showBrandLogos: boolean;
   chatAppsDocsUrl?: string;
   instances?: NanobotChannelInstanceInfo[];
-  actionKey?: string | null;
-  onAction?: (action: "enable" | "disable", name: string) => void;
   onFeaturesUpdate: (payload: NanobotFeaturesPayload) => void;
   customization?: ChannelInstancesPanelCustomization;
 }) {
@@ -96,9 +92,6 @@ export function ChannelInstancesPanel({
     () => new Set(selected?.configured_fields ?? []),
     [selected?.configured_fields],
   );
-  const enableBusy = actionKey === `enable:${feature.name}`;
-  const disableBusy = actionKey === `disable:${feature.name}`;
-  const channelBusy = enableBusy || disableBusy;
 
   useEffect(() => {
     if (selectedId && !instances.some((instance) => instance.id === selectedId)) {
@@ -168,23 +161,6 @@ export function ChannelInstancesPanel({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <ChannelStatusBadge>{channelStatusLabel(feature, tx)}</ChannelStatusBadge>
-          {onAction ? (
-            <>
-              {channelBusy ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-hidden />
-              ) : null}
-              <ToggleButton
-                checked={feature.enabled}
-                disabled={channelBusy || feature.configured === false}
-                ariaLabel={t("settings.channels.toggleChannel", {
-                  name: displayName,
-                  defaultValue: "{{name}} channel",
-                })}
-                label={feature.enabled ? tx("settings.values.on", "On") : tx("settings.values.off", "Off")}
-                onChange={(checked) => onAction(checked ? "enable" : "disable", feature.name)}
-              />
-            </>
-          ) : null}
         </div>
       </div>
 
@@ -235,7 +211,6 @@ export function ChannelInstancesPanel({
                     disabled={
                       busyInstanceId === instance.id
                       || !instance.configured
-                      || Boolean(onAction && !feature.enabled)
                     }
                     ariaLabel={customization.toggleAriaLabel?.(instance)
                       ?? t("settings.channels.toggleInstance", {

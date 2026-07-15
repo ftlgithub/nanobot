@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "Conectar WhatsApp",
     "docsLabel": "Abrir guía de WhatsApp",
+    "officialLabel": "Abrir la ayuda de WhatsApp",
     "tryIt": "Tras iniciar sesión en la terminal, envía un DM a la cuenta conectada.",
     "summary": "WhatsApp se conecta escaneando un QR con la cuenta que ejecutará el bot.",
     "steps": [

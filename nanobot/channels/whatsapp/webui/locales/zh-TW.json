@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "連接 WhatsApp",
     "docsLabel": "開啟 WhatsApp 設定指南",
+    "officialLabel": "開啟 WhatsApp 說明",
     "tryIt": "終端機登入完成後，向已連接的帳戶傳送一則 WhatsApp 私訊。",
     "summary": "使用要執行機器人的 WhatsApp 帳戶掃描二維碼即可完成連接。",
     "steps": [

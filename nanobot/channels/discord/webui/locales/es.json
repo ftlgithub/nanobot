@@ -29,6 +29,10 @@
           "open": "Todos los mensajes",
           "allowlist": "Lista permitida"
         }
+      },
+      "allowFrom": {
+        "label": "Usuarios permitidos",
+        "placeholder": "ID de usuario separados por comas"
       }
     }
   }

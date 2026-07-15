@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "Conectar WeChat",
     "docsLabel": "Abrir guía de WeChat",
+    "officialLabel": "Abrir WeChat",
     "tryIt": "Tras iniciar sesión por QR, envía un DM al usuario conectado.",
     "summary": "WeChat inicia sesión con un QR y guarda el estado de la cuenta localmente.",
     "steps": [

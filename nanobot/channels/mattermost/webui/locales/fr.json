@@ -33,6 +33,10 @@
           "open": "Tous les messages",
           "allowlist": "Liste d’autorisation"
         }
+      },
+      "allowFrom": {
+        "label": "Utilisateurs autorisés",
+        "placeholder": "ID utilisateur séparés par des virgules"
       }
     }
   }

@@ -5,19 +5,29 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
+
+if TYPE_CHECKING:
+    from nanobot.channels.plugin import ChannelPlugin
 
 FieldKind = Literal["string", "secret", "list", "bool", "int", "enum"]
 RouteFieldType = str | tuple[str, set[str]]
 SetupValidator = Callable[[dict[str, Any]], dict[str, Any]]
+DefaultConfigFactory = Callable[[], dict[str, Any]]
+InstanceSpecsFactory = Callable[..., Iterable["ChannelInstanceSpec"]]
+InstanceConfigUpdater = Callable[..., dict[str, Any]]
+RuntimeNameFactory = Callable[[str, str], str]
+FeatureInstancesFactory = Callable[..., list[dict[str, Any]] | None]
 
 __all__ = [
     "ChannelActivation",
     "ChannelFieldSpec",
     "ChannelInstanceSpec",
+    "ChannelManagementSpec",
     "ChannelSetupSpec",
     "SetupRequirement",
     "channel_feature_instances",
+    "channel_default_config",
     "channel_field_value",
     "channel_instance_config",
     "channel_instance_specs",
@@ -201,40 +211,109 @@ class ChannelInstanceSpec:
     config: Any
 
 
-def channel_runtime_name(channel_cls: type[Any], instance_id: str = "default") -> str:
-    runtime_name = str(channel_cls.runtime_name(instance_id))
-    _validate_runtime_name(channel_cls, runtime_name)
+@dataclass(frozen=True)
+class ChannelManagementSpec:
+    """Dependency-free adapter for persisted channel state.
+
+    Runtime classes own network and message lifecycle only. A multi-instance
+    channel supplies these callbacks from a module that can be imported without
+    its optional platform SDK.
+    """
+
+    multi_instance: bool = False
+    default_config: DefaultConfigFactory | None = None
+    instance_specs: InstanceSpecsFactory | None = None
+    update_instance_config: InstanceConfigUpdater | None = None
+    runtime_name: RuntimeNameFactory | None = None
+    feature_instances: FeatureInstancesFactory | None = None
+
+    def __post_init__(self) -> None:
+        multi_instance_callbacks = {
+            "instance_specs": self.instance_specs,
+            "update_instance_config": self.update_instance_config,
+            "runtime_name": self.runtime_name,
+            "feature_instances": self.feature_instances,
+        }
+        if not self.multi_instance:
+            unexpected = [
+                name for name, callback in multi_instance_callbacks.items() if callback is not None
+            ]
+            if unexpected:
+                raise ValueError(
+                    "single-instance channel management cannot define "
+                    + ", ".join(unexpected)
+                )
+        if self.multi_instance and self.instance_specs is None:
+            raise ValueError("multi-instance channel management requires instance_specs")
+        if self.multi_instance and self.update_instance_config is None:
+            raise ValueError("multi-instance channel management requires update_instance_config")
+
+
+def channel_default_config(plugin: ChannelPlugin) -> dict[str, Any]:
+    factory = plugin.management.default_config
+    if factory is None:
+        return {"enabled": plugin.default_enabled}
+    values = factory()
+    if not isinstance(values, dict):
+        raise TypeError(f"ChannelPlugin.management.default_config for '{plugin.name}' must return a dict")
+    return dict(values)
+
+
+def channel_runtime_name(plugin: ChannelPlugin, instance_id: str = "default") -> str:
+    factory = plugin.management.runtime_name
+    if factory is None:
+        if instance_id not in {"", "default"}:
+            raise ValueError(f"{plugin.name} does not support multiple instances")
+        runtime_name = plugin.name
+    else:
+        runtime_name = str(factory(plugin.name, instance_id))
+    _validate_runtime_name(plugin, runtime_name)
     return runtime_name
 
 
 def channel_instance_specs(
-    channel_cls: type[Any],
+    plugin: ChannelPlugin,
     section: Any,
     *,
     enabled_only: bool = True,
 ) -> list[ChannelInstanceSpec]:
-    """Expand persisted config through a channel override or the single-instance default."""
-    raw_specs = channel_cls.instance_specs(section, enabled_only=enabled_only)
+    """Expand persisted config through the dependency-free management adapter."""
+    factory = plugin.management.instance_specs
+    if factory is None:
+        activation = ChannelActivation.from_config(section)
+        raw_specs: Iterable[ChannelInstanceSpec] = (
+            []
+            if enabled_only and not activation.resolve(default=plugin.default_enabled)
+            else [ChannelInstanceSpec(instance_id="default", config=section)]
+        )
+    else:
+        raw_specs = factory(section, enabled_only=enabled_only)
     if not isinstance(raw_specs, Iterable):
-        raise TypeError(f"{channel_cls.__name__}.instance_specs() must return an iterable")
+        raise TypeError(
+            f"ChannelPlugin.management.instance_specs for '{plugin.name}' must return an iterable"
+        )
     specs = list(raw_specs)
 
     instance_ids: set[str] = set()
     runtime_names: set[str] = set()
     for spec in specs:
         if not isinstance(spec, ChannelInstanceSpec):
-            raise TypeError(f"{channel_cls.__name__}.instance_specs() returned an invalid item")
+            raise TypeError(
+                f"ChannelPlugin.management.instance_specs for '{plugin.name}' returned an invalid item"
+            )
         if not isinstance(spec.instance_id, str) or not spec.instance_id.strip():
-            raise ValueError(f"{channel_cls.__name__}.instance_specs() returned an empty instance id")
+            raise ValueError(
+                f"ChannelPlugin.management.instance_specs for '{plugin.name}' returned an empty instance id"
+            )
         if spec.instance_id in instance_ids:
             raise ValueError(
-                f"{channel_cls.__name__}.instance_specs() returned duplicate instance id "
+                f"ChannelPlugin.management.instance_specs for '{plugin.name}' returned duplicate instance id "
                 f"'{spec.instance_id}'"
             )
-        runtime_name = channel_runtime_name(channel_cls, spec.instance_id)
+        runtime_name = channel_runtime_name(plugin, spec.instance_id)
         if runtime_name in runtime_names:
             raise ValueError(
-                f"{channel_cls.__name__}.instance_specs() returned duplicate runtime name "
+                f"ChannelPlugin.management.instance_specs for '{plugin.name}' returned duplicate runtime name "
                 f"'{runtime_name}'"
             )
         instance_ids.add(spec.instance_id)
@@ -250,7 +329,7 @@ def resolve_channel_action_target(
 
 
 def channel_instance_config(
-    channel_cls: type[Any],
+    plugin: ChannelPlugin,
     section: Any,
     *,
     instance_id: str = "default",
@@ -259,7 +338,7 @@ def channel_instance_config(
     selected = next(
         (
             spec
-            for spec in channel_instance_specs(channel_cls, section, enabled_only=False)
+            for spec in channel_instance_specs(plugin, section, enabled_only=False)
             if spec.instance_id == instance_id
         ),
         None,
@@ -273,17 +352,22 @@ def channel_instance_config(
 
 
 def channel_update_instance_config(
-    channel_cls: type[Any],
+    plugin: ChannelPlugin,
     section: Any,
     values: dict[str, Any],
     *,
     instance_id: str = "default",
 ) -> dict[str, Any]:
-    return channel_cls.update_instance_config(section, values, instance_id=instance_id)
+    updater = plugin.management.update_instance_config
+    if updater is None:
+        if instance_id not in {"", "default"}:
+            raise ValueError(f"{plugin.name} does not support multiple instances")
+        return values
+    return updater(section, values, instance_id=instance_id)
 
 
 def channel_set_config_enabled(
-    channel_cls: type[Any],
+    plugin: ChannelPlugin,
     section: Any,
     enabled: bool,
     *,
@@ -292,11 +376,11 @@ def channel_set_config_enabled(
     """Toggle one instance while preserving channel-owned config shape."""
     from nanobot.config.loader import merge_missing_defaults
 
-    values = channel_instance_config(channel_cls, section, instance_id=instance_id)
-    values = merge_missing_defaults(values, channel_cls.default_config())
+    values = channel_instance_config(plugin, section, instance_id=instance_id)
+    values = merge_missing_defaults(values, channel_default_config(plugin))
     values["enabled"] = enabled
     return channel_update_instance_config(
-        channel_cls,
+        plugin,
         section,
         values,
         instance_id=instance_id,
@@ -304,23 +388,36 @@ def channel_set_config_enabled(
 
 
 def channel_feature_instances(
-    channel_cls: type[Any],
+    plugin: ChannelPlugin,
     section: Any,
     *,
     setup_spec: ChannelSetupSpec | None = None,
 ) -> list[dict[str, Any]] | None:
-    overrides = channel_cls.feature_instances(section, setup_spec=setup_spec)
-    if overrides is None and not (setup_spec and setup_spec.multi_instance):
+    factory = plugin.management.feature_instances
+    overrides = factory(section, setup_spec=setup_spec) if factory is not None else None
+    if overrides is None and not plugin.management.multi_instance:
         return None
     if overrides is not None and (
         not isinstance(overrides, list)
         or any(not isinstance(instance, dict) for instance in overrides)
     ):
-        raise TypeError(f"{channel_cls.__name__}.feature_instances() must return a list of dicts or None")
+        raise TypeError(
+            f"ChannelPlugin.management.feature_instances for '{plugin.name}' "
+            "must return a list of dicts or None"
+        )
+
+    enabled_ids = {
+        spec.instance_id for spec in channel_instance_specs(plugin, section, enabled_only=True)
+    }
 
     instances = [
-        _channel_feature_instance(channel_cls, spec, setup_spec)
-        for spec in channel_instance_specs(channel_cls, section, enabled_only=False)
+        _channel_feature_instance(
+            plugin.name,
+            spec,
+            setup_spec,
+            enabled=spec.instance_id in enabled_ids,
+        )
+        for spec in channel_instance_specs(plugin, section, enabled_only=False)
     ]
     if overrides is None:
         return instances
@@ -331,12 +428,14 @@ def channel_feature_instances(
         instance_id = override.get("id")
         if not isinstance(instance_id, str) or instance_id not in by_id:
             raise ValueError(
-                f"{channel_cls.__name__}.feature_instances() returned unknown instance id "
+                f"ChannelPlugin.management.feature_instances for '{plugin.name}' "
+                "returned unknown instance id "
                 f"'{instance_id}'"
             )
         if instance_id in seen:
             raise ValueError(
-                f"{channel_cls.__name__}.feature_instances() returned duplicate instance id "
+                f"ChannelPlugin.management.feature_instances for '{plugin.name}' "
+                "returned duplicate instance id "
                 f"'{instance_id}'"
             )
         seen.add(instance_id)
@@ -355,15 +454,15 @@ def refresh_channel_feature_metadata(
     return bool(channel_cls.refresh_feature_metadata(config_path, instance_id=instance_id))
 
 
-def _validate_runtime_name(channel_cls: type[Any], runtime_name: Any) -> None:
-    channel_name = str(channel_cls.name).strip()
+def _validate_runtime_name(plugin: ChannelPlugin, runtime_name: Any) -> None:
+    channel_name = str(plugin.name).strip()
     if not channel_name:
-        raise ValueError(f"{channel_cls.__name__}.name must not be empty")
+        raise ValueError("ChannelPlugin.name must not be empty")
     if not isinstance(runtime_name, str) or not runtime_name.strip():
-        raise ValueError(f"{channel_cls.__name__} returned an empty runtime name")
+        raise ValueError(f"ChannelPlugin.management for '{plugin.name}' returned an empty runtime name")
     if runtime_name != channel_name and not runtime_name.startswith(f"{channel_name}."):
         raise ValueError(
-            f"{channel_cls.__name__} runtime name '{runtime_name}' must be scoped under "
+            f"ChannelPlugin.management runtime name '{runtime_name}' must be scoped under "
             f"'{channel_name}'"
         )
 
@@ -402,9 +501,11 @@ def stringify_channel_value(value: Any) -> str:
 
 
 def _channel_feature_instance(
-    channel_cls: type[Any],
+    channel_name: str,
     instance: ChannelInstanceSpec,
     setup_spec: ChannelSetupSpec | None,
+    *,
+    enabled: bool,
 ) -> dict[str, Any]:
     config = instance.config
     name = str(channel_field_value(config, "name") or instance.instance_id).strip()
@@ -419,7 +520,7 @@ def _channel_feature_instance(
         value = channel_field_value(config, field_name)
         if not channel_value_present(value):
             continue
-        key = f"channels.{channel_cls.name}.{field_name}"
+        key = f"channels.{channel_name}.{field_name}"
         configured_fields.append(key)
         if field_spec.kind != "secret":
             config_values[key] = stringify_channel_value(value)
@@ -429,7 +530,7 @@ def _channel_feature_instance(
         "name": name,
         "display_name": display_name,
         "avatar_url": avatar_url,
-        "enabled": bool(channel_field_value(config, "enabled")),
+        "enabled": enabled,
         "configured": bool(setup_spec and setup_spec.is_configured(config)),
         "config_values": config_values,
         "configured_fields": configured_fields,

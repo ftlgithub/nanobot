@@ -15,9 +15,8 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
-from pydantic import Field
 from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
@@ -28,6 +27,7 @@ from nanobot.bus.outbound_events import ProgressEvent
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.channels.contracts import ChannelInstanceSpec
+from nanobot.channels.feishu.config import FeishuConfig, feishu_default_config
 from nanobot.channels.feishu.instances import (
     DEFAULT_INSTANCE_ID,
     feishu_app_identity_key,
@@ -39,7 +39,6 @@ from nanobot.channels.feishu.instances import (
 from nanobot.channels.feishu.websocket import get_feishu_ws_runner
 from nanobot.command.router import normalize_command_text
 from nanobot.config.paths import get_media_dir
-from nanobot.config.schema import Base
 from nanobot.pairing import clear_channel
 from nanobot.utils.helpers import safe_filename
 from nanobot.utils.logging_bridge import redirect_lib_logging
@@ -415,28 +414,6 @@ def _extract_post_text(content_json: dict) -> str:
     return text
 
 
-class FeishuConfig(Base):
-    """Feishu/Lark channel configuration using WebSocket long connection."""
-
-    instance_id: str = DEFAULT_INSTANCE_ID
-    name: str = "nanobot"
-    identity_key: str = ""
-    enabled: bool = False
-    app_id: str = ""
-    app_secret: str = ""
-    encrypt_key: str = ""
-    verification_token: str = ""
-    allow_from: list[str] = Field(default_factory=list)
-    react_emoji: str = "THUMBSUP"
-    done_emoji: str | None = None  # Emoji to show when task is completed (e.g., "DONE", "OK")
-    tool_hint_prefix: str = "\U0001f527"  # Prefix for inline tool hints (default: 🔧)
-    group_policy: Literal["open", "mention"] = "mention"
-    reply_to_message: bool = False  # If True, bot replies quote the user's original message
-    streaming: bool = True
-    domain: Literal["feishu", "lark"] = "feishu"  # Set to "lark" for international Lark
-    topic_isolation: bool = True  # If True, each topic in group chat gets its own session (isolation)
-
-
 # =============================================================================
 # QR scan-to-create onboarding
 #
@@ -655,7 +632,7 @@ def sync_saved_feishu_identity_boundary(
     if not isinstance(feishu_cfg, dict):
         feishu_cfg = {}
 
-    defaults = FeishuChannel.default_config()
+    defaults = feishu_default_config()
     previous_identity_key = ""
     for spec in feishu_instance_specs(feishu_cfg, defaults):
         if spec.instance_id == instance_id:
@@ -697,7 +674,7 @@ def save_registration_result(
     feishu_cfg = getattr(full_config.channels, "feishu", None) or {}
     if not isinstance(feishu_cfg, dict):
         feishu_cfg = {}
-    defaults = FeishuChannel.default_config()
+    defaults = feishu_default_config()
     app_id = str(result["app_id"]).strip()
     domain = str(result.get("domain", "feishu") or "feishu").strip().lower()
     domain = "lark" if domain == "lark" else "feishu"
@@ -772,7 +749,7 @@ def refresh_saved_feishu_identities(
 
     full_config = config or load_config()
     feishu_cfg = getattr(full_config.channels, "feishu", None)
-    defaults = FeishuChannel.default_config()
+    defaults = feishu_default_config()
     specs = feishu_instance_specs(feishu_cfg, defaults)
     if instance_id:
         specs = [spec for spec in specs if spec.instance_id == instance_id]
@@ -916,42 +893,7 @@ class FeishuChannel(BaseChannel):
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
-        return FeishuConfig().model_dump(by_alias=True)
-
-    @classmethod
-    def runtime_name(cls, instance_id: str = DEFAULT_INSTANCE_ID) -> str:
-        return runtime_channel_name(cls.name, instance_id)
-
-    @classmethod
-    def instance_specs(
-        cls,
-        section: Any,
-        *,
-        enabled_only: bool = True,
-    ) -> list[ChannelInstanceSpec]:
-        return feishu_instance_specs(
-            section,
-            cls.default_config(),
-            enabled_only=enabled_only,
-        )
-
-    @classmethod
-    def update_instance_config(
-        cls,
-        section: Any,
-        values: dict[str, Any],
-        *,
-        instance_id: str = DEFAULT_INSTANCE_ID,
-    ) -> dict[str, Any]:
-        from nanobot.channels.feishu.instances import upsert_feishu_instance
-
-        existing = section if isinstance(section, dict) else {}
-        return upsert_feishu_instance(
-            existing,
-            cls.default_config(),
-            instance_id,
-            values,
-        )
+        return feishu_default_config()
 
     @classmethod
     def refresh_feature_metadata(

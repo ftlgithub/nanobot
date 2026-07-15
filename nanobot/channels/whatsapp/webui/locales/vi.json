@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "Kết nối WhatsApp",
     "docsLabel": "Mở hướng dẫn WhatsApp",
+    "officialLabel": "Mở trợ giúp WhatsApp",
     "tryIt": "Sau khi đăng nhập terminal, gửi tin nhắn riêng đến tài khoản đã kết nối.",
     "summary": "WhatsApp kết nối bằng cách quét mã QR từ tài khoản sẽ chạy bot.",
     "steps": [

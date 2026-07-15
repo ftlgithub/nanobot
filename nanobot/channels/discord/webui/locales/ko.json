@@ -29,6 +29,10 @@
           "open": "모든 메시지",
           "allowlist": "허용 목록"
         }
+      },
+      "allowFrom": {
+        "label": "허용된 사용자",
+        "placeholder": "사용자 ID, 쉼표로 구분"
       }
     }
   }

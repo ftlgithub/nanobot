@@ -27,7 +27,7 @@ from nanobot.bus.queue import MessageBus
 from nanobot.channels._setup import channel_setup_spec
 from nanobot.channels.base import BaseChannel
 from nanobot.channels.contracts import (
-    ChannelActivation,
+    channel_default_config,
     channel_instance_specs,
     channel_runtime_name,
     resolve_channel_action_target,
@@ -66,11 +66,12 @@ _BOOL_CAMEL_ALIASES: dict[str, str] = {
 }
 
 def _default_channel_config(name: str) -> dict[str, Any] | None:
-    if not channel_default_enabled(name):
-        return None
-    from nanobot.channels.registry import load_channel_class
+    from nanobot.channels.registry import load_channel_plugin
 
-    return load_channel_class(name).default_config()
+    plugin = load_channel_plugin(name)
+    if not plugin.default_enabled:
+        return None
+    return channel_default_config(plugin)
 
 
 class ChannelManager:
@@ -205,12 +206,13 @@ class ChannelManager:
             )
             if section is None:
                 continue
-            setup_spec = channel_setup_spec(name, plugin=plugin)
-            activation = ChannelActivation.from_config(
-                section,
-                include_instances=bool(setup_spec and setup_spec.multi_instance),
-            )
-            if activation.resolve(default=plugin.default_enabled):
+            try:
+                channel_setup_spec(name, plugin=plugin)
+                enabled = bool(channel_instance_specs(plugin, section))
+            except Exception as exc:
+                logger.warning("Could not inspect {} channel activation: {}", name, exc)
+                enabled = False
+            if enabled:
                 enabled_names.add(name)
 
         for name, cls in discover_enabled(
@@ -227,10 +229,10 @@ class ChannelManager:
             if section is None:
                 continue
             try:
-                channel_setup_spec(name, cls, plugin=plugin)
-                specs = channel_instance_specs(cls, section)
+                channel_setup_spec(name, plugin=plugin)
+                specs = channel_instance_specs(plugin, section)
                 runtime_specs = [
-                    (channel_runtime_name(cls, spec.instance_id), spec)
+                    (channel_runtime_name(plugin, spec.instance_id), spec)
                     for spec in specs
                 ]
                 collisions = sorted(
@@ -374,22 +376,11 @@ class ChannelManager:
 
         self.config = load_config()
         section = self._channel_section(name, default_enabled=plugin.default_enabled)
-        try:
-            cls = plugin.load_channel_class()
-        except ImportError:
-            cls = None
-        if cls is None:
-            return {
-                "handled": True,
-                "ok": False,
-                "requires_restart": True,
-                "message": f"{name} channel could not be loaded.",
-            }
-        channel_setup_spec(name, cls, plugin=plugin)
+        channel_setup_spec(name, plugin=plugin)
         instance_id = resolve_channel_action_target(instance_id)
 
         if action == "disable":
-            runtime_name = channel_runtime_name(cls, instance_id)
+            runtime_name = channel_runtime_name(plugin, instance_id)
             runtime_names = (
                 [runtime_name]
                 if self._channel_owners.get(runtime_name) == name
@@ -410,7 +401,17 @@ class ChannelManager:
         if action != "enable":
             return {"handled": True, "ok": False, "requires_restart": True}
 
-        specs = channel_instance_specs(cls, section) if section is not None else []
+        try:
+            cls = plugin.load_channel_class()
+        except Exception:
+            return {
+                "handled": True,
+                "ok": False,
+                "requires_restart": True,
+                "message": f"{name} channel could not be loaded.",
+            }
+
+        specs = channel_instance_specs(plugin, section) if section is not None else []
         specs = [spec for spec in specs if spec.instance_id == instance_id]
         if not specs:
             return {
@@ -421,7 +422,7 @@ class ChannelManager:
             }
 
         runtime_specs = [
-            (channel_runtime_name(cls, spec.instance_id), spec)
+            (channel_runtime_name(plugin, spec.instance_id), spec)
             for spec in specs
         ]
         collisions = [

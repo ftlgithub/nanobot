@@ -16,13 +16,13 @@ from typing import Any
 import httpx
 
 from nanobot.channels._setup import channel_setup_spec
-from nanobot.channels.base import BaseChannel
 from nanobot.channels.contracts import (
     ChannelSetupSpec,
     channel_field_value,
     channel_instance_config,
     channel_value_present,
 )
+from nanobot.channels.plugin import ChannelPlugin
 from nanobot.channels.registry import load_channel_plugin
 from nanobot.config.loader import load_config
 from nanobot.security.network import resolve_url_target
@@ -40,16 +40,12 @@ def _official_action(name: str) -> str | None:
 
 def _channel_contract(
     name: str,
-) -> tuple[type[BaseChannel] | None, ChannelSetupSpec | None]:
+) -> tuple[ChannelPlugin | None, ChannelSetupSpec | None]:
     try:
         plugin = load_channel_plugin(name)
     except ImportError:
         return None, None
-    try:
-        channel_cls = plugin.load_channel_class()
-    except (ImportError, TypeError):
-        channel_cls = None
-    return channel_cls, channel_setup_spec(name, channel_cls, plugin=plugin)
+    return plugin, channel_setup_spec(name, plugin=plugin)
 
 
 def validate_channel_config(
@@ -66,10 +62,10 @@ def validate_channel_config(
 
     config = load_config()
     section = getattr(config.channels, channel, None)
-    channel_cls, setup_spec = _channel_contract(channel)
+    plugin, setup_spec = _channel_contract(channel)
     values = _channel_config(
         section,
-        channel_cls=channel_cls,
+        plugin=plugin,
         instance_id=instance_id,
     )
     values = _merge_form_values(channel, values, raw_values or {}, setup_spec=setup_spec)
@@ -365,11 +361,11 @@ _VALIDATORS = {
 def _channel_config(
     section: Any,
     *,
-    channel_cls: type[BaseChannel] | None,
+    plugin: ChannelPlugin | None,
     instance_id: str,
 ) -> dict[str, Any]:
-    if channel_cls is not None:
-        return channel_instance_config(channel_cls, section, instance_id=instance_id)
+    if plugin is not None:
+        return channel_instance_config(plugin, section, instance_id=instance_id)
     if hasattr(section, "model_dump"):
         return dict(section.model_dump(mode="json", by_alias=True))
     if isinstance(section, dict):

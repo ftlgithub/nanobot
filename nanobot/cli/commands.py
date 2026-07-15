@@ -766,6 +766,7 @@ def _print_enable_options(
             feature_support.channel_enabled(
                 config,
                 item,
+                plugin,
                 default_enabled=plugin.default_enabled,
             )
             if is_channel

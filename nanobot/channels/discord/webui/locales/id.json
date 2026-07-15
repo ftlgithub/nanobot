@@ -29,6 +29,10 @@
           "open": "Semua pesan",
           "allowlist": "Daftar izin"
         }
+      },
+      "allowFrom": {
+        "label": "Pengguna yang diizinkan",
+        "placeholder": "ID pengguna, dipisahkan koma"
       }
     }
   }

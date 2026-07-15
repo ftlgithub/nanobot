@@ -6,7 +6,11 @@ import pytest
 
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
-from nanobot.channels.contracts import ChannelInstanceSpec, ChannelSetupSpec
+from nanobot.channels.contracts import (
+    ChannelInstanceSpec,
+    ChannelManagementSpec,
+    ChannelSetupSpec,
+)
 from nanobot.channels.manager import ChannelManager
 from nanobot.channels.plugin import ChannelPlugin
 from nanobot.config.schema import Config
@@ -38,23 +42,6 @@ class _MultiHotChannel(_HotChannel):
     name = "multi"
     display_name = "Multi"
 
-    @classmethod
-    def runtime_name(cls, instance_id: str = "default") -> str:
-        return cls.name if instance_id == "default" else f"{cls.name}.{instance_id}"
-
-    @classmethod
-    def instance_specs(cls, section, *, enabled_only=True):
-        instances = section.get("instances", []) if isinstance(section, dict) else []
-        return [
-            ChannelInstanceSpec(
-                instance_id=item["id"],
-                config=item,
-            )
-            for item in instances
-            if not enabled_only or item.get("enabled", False)
-        ]
-
-
 class _AliasHotChannel(_HotChannel):
     """Plugin entry-point alias that claims another channel's runtime namespace."""
 
@@ -62,19 +49,40 @@ class _AliasHotChannel(_HotChannel):
     display_name = "Alias"
 
 
-def _plugin(channel_cls: type[BaseChannel]) -> ChannelPlugin:
+def _multi_instance_specs(section, *, enabled_only=True):
+    instances = section.get("instances", []) if isinstance(section, dict) else []
+    return [
+        ChannelInstanceSpec(
+            instance_id=item["id"],
+            config=item,
+        )
+        for item in instances
+        if not enabled_only or item.get("enabled", False)
+    ]
+
+
+def _plugin(channel_cls: type[BaseChannel], *, multi_instance: bool = False) -> ChannelPlugin:
     runtime_attr = f"_runtime_{channel_cls.display_name.lower()}"
     globals()[runtime_attr] = channel_cls
-    setup = (
-        ChannelSetupSpec(fields={}, multi_instance=True)
-        if channel_cls.supports_multiple_instances()
-        else None
+    setup = ChannelSetupSpec(fields={}, multi_instance=True) if multi_instance else None
+    management = (
+        ChannelManagementSpec(
+            multi_instance=True,
+            instance_specs=_multi_instance_specs,
+            update_instance_config=lambda section, values, *, instance_id="default": values,
+            runtime_name=lambda name, instance_id: (
+                name if instance_id == "default" else f"{name}.{instance_id}"
+            ),
+        )
+        if multi_instance
+        else ChannelManagementSpec()
     )
     return ChannelPlugin(
         name=channel_cls.name,
         display_name=channel_cls.display_name,
         runtime=f"{__name__}:{runtime_attr}",
         setup=setup,
+        management=management,
     )
 
 
@@ -183,7 +191,7 @@ async def test_apply_channel_feature_action_uses_channel_runtime_name(monkeypatc
         }
     })
 
-    _stub_registry(monkeypatch, _plugin(_MultiHotChannel))
+    _stub_registry(monkeypatch, _plugin(_MultiHotChannel, multi_instance=True))
     monkeypatch.setattr("nanobot.config.loader.load_config", lambda: config)
 
     manager = ChannelManager(config, MessageBus())
@@ -237,7 +245,7 @@ async def test_default_multi_channel_action_reconciles_only_default_runtime(monk
         }
     })
 
-    _stub_registry(monkeypatch, _plugin(_MultiHotChannel))
+    _stub_registry(monkeypatch, _plugin(_MultiHotChannel, multi_instance=True))
     configs = iter([disabled, enabled])
     monkeypatch.setattr("nanobot.config.loader.load_config", lambda: next(configs))
 

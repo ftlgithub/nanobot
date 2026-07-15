@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "Connecter WhatsApp",
     "docsLabel": "Ouvrir le guide WhatsApp",
+    "officialLabel": "Ouvrir l’aide WhatsApp",
     "tryIt": "Après la connexion dans le terminal, envoyez un message privé au compte connecté.",
     "summary": "WhatsApp se connecte en scannant un QR code avec le compte qui exécutera le bot.",
     "steps": [

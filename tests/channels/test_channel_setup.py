@@ -1,4 +1,6 @@
 import ast
+import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -115,6 +117,27 @@ def test_every_builtin_channel_is_a_self_contained_package() -> None:
             assert (package_dir / plugin.webui).is_file()
 
 
+def test_channel_locales_cover_authoritative_setup_contracts() -> None:
+    channel_dir = Path(channel_setup_module.__file__).parent
+    for name in EXPECTED_CHANNELS:
+        plugin = load_builtin_channel_plugin(name)
+        assert plugin is not None
+        if plugin.webui is None or plugin.setup is None:
+            continue
+        english = json.loads(
+            (channel_dir / name / "webui" / "locales" / "en.json").read_text(encoding="utf-8")
+        )
+        setup_messages = english["setup"]
+        field_messages = setup_messages.get("fields", {})
+        for field_name, field in plugin.setup.fields.items():
+            if not field.writable:
+                continue
+            message_key = re.sub(r"[^A-Za-z0-9_-]+", "_", field_name)
+            assert message_key in field_messages, f"{name} field {field_name} has no locale copy"
+        if plugin.setup.official_url:
+            assert setup_messages.get("officialLabel"), f"{name} has no localized official label"
+
+
 def test_builtin_setup_manifests_only_import_contract_modules() -> None:
     channel_dir = Path(channel_setup_module.__file__).parent
     allowed_imports = {
@@ -132,32 +155,51 @@ def test_builtin_setup_manifests_only_import_contract_modules() -> None:
                 imports.update(alias.name for alias in node.names)
             elif isinstance(node, ast.ImportFrom) and node.module:
                 imports.add(node.module)
-        assert imports <= allowed_imports, f"{name} imports runtime dependencies: {imports}"
+        allowed_channel_imports = {
+            module
+            for module in imports
+            if module.startswith(f"nanobot.channels.{name}.")
+            and not module.endswith(".runtime")
+        }
+        unexpected = imports - allowed_imports - allowed_channel_imports
+        assert not unexpected, f"{name} imports runtime dependencies: {unexpected}"
 
 
-def test_builtin_multi_instance_manifests_match_runtime_declarations() -> None:
-    channel_dir = Path(channel_setup_module.__file__).parent
+def test_builtin_multi_instance_setup_matches_management_declarations() -> None:
     manifest_multi = {
         name
         for name in EXPECTED_CHANNELS
         if (spec := channel_setup_spec(name)) is not None and spec.multi_instance
     }
-    runtime_multi: set[str] = set()
-    for name in EXPECTED_CHANNELS:
-        runtime_path = channel_dir / name / "runtime.py"
-        tree = ast.parse(runtime_path.read_text(encoding="utf-8"))
-        if any(
-            isinstance(node, ast.ClassDef)
-            and any(
-                isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                and item.name == "instance_specs"
-                for item in node.body
-            )
-            for node in tree.body
-        ):
-            runtime_multi.add(name)
+    management_multi = {
+        name
+        for name in EXPECTED_CHANNELS
+        if (plugin := load_builtin_channel_plugin(name)) is not None
+        and plugin.management.multi_instance
+    }
 
-    assert manifest_multi == runtime_multi
+    assert manifest_multi == management_multi
+
+
+def test_runtime_classes_do_not_declare_persisted_management_hooks() -> None:
+    channel_dir = Path(channel_setup_module.__file__).parent
+    management_hooks = {
+        "feature_instances",
+        "instance_specs",
+        "runtime_name",
+        "supports_multiple_instances",
+        "update_instance_config",
+    }
+    for name in EXPECTED_CHANNELS:
+        tree = ast.parse((channel_dir / name / "runtime.py").read_text(encoding="utf-8"))
+        declared = {
+            item.name
+            for node in tree.body
+            if isinstance(node, ast.ClassDef)
+            for item in node.body
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        assert declared.isdisjoint(management_hooks), f"{name} runtime owns {declared & management_hooks}"
 
 
 def test_feishu_package_manifest_owns_runtime_and_webui_metadata() -> None:
@@ -167,6 +209,7 @@ def test_feishu_package_manifest_owns_runtime_and_webui_metadata() -> None:
     assert plugin.runtime == "nanobot.channels.feishu.runtime:FeishuChannel"
     assert plugin.optional_extra == "feishu"
     assert plugin.capabilities == {"multi_instance", "qr_connect"}
+    assert plugin.management.multi_instance is True
     assert plugin.webui == "webui/index.tsx"
 
 
@@ -209,6 +252,16 @@ def test_channel_plugin_normalizes_webui_entry() -> None:
     )
 
     assert plugin.webui == "webui/index.tsx"
+
+
+def test_external_channel_plugin_name_allows_entry_point_hyphens() -> None:
+    plugin = ChannelPlugin(
+        name="google-chat",
+        display_name="Google Chat",
+        runtime="example.google_chat.runtime:GoogleChatChannel",
+    )
+
+    assert plugin.name == "google-chat"
 
 
 def test_channel_plugin_rejects_invalid_runtime_import_path() -> None:

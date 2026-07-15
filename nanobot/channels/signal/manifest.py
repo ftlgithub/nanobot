@@ -9,7 +9,6 @@ SETUP_SPEC = ChannelSetupSpec(
         "phoneNumber": field(),
         "daemonHost": field(),
         "daemonPort": field("int"),
-        "allowFrom": field("list", snapshot=False),
         "dm.allowFrom": field("list"),
         "group.allowFrom": field("list"),
     },

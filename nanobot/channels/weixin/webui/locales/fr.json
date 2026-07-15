@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "Connecter WeChat",
     "docsLabel": "Ouvrir le guide WeChat",
+    "officialLabel": "Ouvrir WeChat",
     "tryIt": "Après la connexion par QR code, envoyez un message privé au compte connecté.",
     "summary": "WeChat se connecte par QR code et enregistre localement l’état du compte.",
     "steps": [

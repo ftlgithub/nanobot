@@ -33,6 +33,10 @@
           "open": "Mọi tin nhắn",
           "allowlist": "Danh sách cho phép"
         }
+      },
+      "allowFrom": {
+        "label": "Người dùng được phép",
+        "placeholder": "ID người dùng, phân tách bằng dấu phẩy"
       }
     }
   }

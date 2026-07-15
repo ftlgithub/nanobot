@@ -40,6 +40,13 @@
       "allowFrom": {
         "label": "허용된 사용자",
         "placeholder": "사용자 ID, 쉼표로 구분"
+      },
+      "topicIsolation": {
+        "label": "주제 격리",
+        "choices": {
+          "true": "주제별로 세션 분리",
+          "false": "그룹에서 하나의 세션 공유"
+        }
       }
     }
   },

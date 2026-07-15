@@ -703,6 +703,8 @@ class WebUISettingsRouter:
             "saved_keys": saved,
         }
         if not enable:
+            features = await asyncio.to_thread(nanobot_features_payload)
+            payload["nanobot_features"] = self._with_restart_state(features, section="runtime")
             return self._json_response(payload)
 
         feature_query = {"name": [name]}
@@ -776,34 +778,20 @@ class WebUISettingsRouter:
             plugin = load_channel_plugin(name)
         except ImportError:
             raise WebUISettingsError(f"unknown channel '{name}'", status=404) from None
-        try:
-            channel_cls = plugin.load_channel_class()
-        except ImportError:
-            channel_cls = None
-        setup_spec = channel_setup_spec(name, channel_cls, plugin=plugin)
+        setup_spec = channel_setup_spec(name, plugin=plugin)
         if setup_spec is None:
             raise WebUISettingsError(f"channel '{name}' cannot be configured from WebUI", status=404)
-        if channel_cls is None and setup_spec.multi_instance:
-            raise WebUISettingsError(
-                f"channel '{name}' must be installed before configuring an instance",
-                status=409,
-            )
         field_types = setup_spec.route_field_types
         if not raw_values:
             return []
 
         config = load_config()
         section = getattr(config.channels, name, None)
-        if channel_cls is not None:
-            channel_config = channel_instance_config(
-                channel_cls,
-                section,
-                instance_id=instance_id,
-            )
-        elif hasattr(section, "model_dump"):
-            channel_config = section.model_dump(mode="json", by_alias=True)
-        else:
-            channel_config = dict(section) if isinstance(section, dict) else {}
+        channel_config = channel_instance_config(
+            plugin,
+            section,
+            instance_id=instance_id,
+        )
 
         saved: list[str] = []
         prefix = f"channels.{name}."
@@ -821,15 +809,11 @@ class WebUISettingsRouter:
             saved.append(raw_key)
 
         try:
-            updated_section = (
-                channel_update_instance_config(
-                    channel_cls,
-                    section,
-                    channel_config,
-                    instance_id=instance_id,
-                )
-                if channel_cls is not None
-                else channel_config
+            updated_section = channel_update_instance_config(
+                plugin,
+                section,
+                channel_config,
+                instance_id=instance_id,
             )
         except ValueError as exc:
             raise WebUISettingsError(

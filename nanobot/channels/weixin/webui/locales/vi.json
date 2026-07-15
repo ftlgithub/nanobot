@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "Kết nối WeChat",
     "docsLabel": "Mở hướng dẫn WeChat",
+    "officialLabel": "Mở WeChat",
     "tryIt": "Sau khi đăng nhập QR, gửi tin nhắn riêng đến tài khoản đã kết nối.",
     "summary": "WeChat đăng nhập bằng mã QR và lưu trạng thái tài khoản cục bộ.",
     "steps": [

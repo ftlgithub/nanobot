@@ -40,6 +40,13 @@
       "allowFrom": {
         "label": "Usuarios permitidos",
         "placeholder": "ID de usuario separados por comas"
+      },
+      "topicIsolation": {
+        "label": "Aislamiento por tema",
+        "choices": {
+          "true": "Una sesión separada por tema",
+          "false": "Una sesión compartida para el grupo"
+        }
       }
     }
   },

@@ -4,25 +4,18 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from loguru import logger
 
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.contracts import (
-    ChannelActivation,
-    ChannelInstanceSpec,
-)
 from nanobot.pairing import (
     PAIRING_CODE_META_KEY,
     format_pairing_reply,
     generate_code,
     is_approved,
 )
-
-if TYPE_CHECKING:
-    from nanobot.channels.contracts import ChannelSetupSpec
 
 
 class BaseChannel(ABC):
@@ -276,59 +269,6 @@ class BaseChannel(ABC):
     def default_config(cls) -> dict[str, Any]:
         """Return default config for onboard. Override in plugins to auto-populate config.json."""
         return {"enabled": False}
-
-    @classmethod
-    def runtime_name(cls, instance_id: str = "default") -> str:
-        """Return the routing key for one channel instance."""
-        if instance_id not in {"", "default"}:
-            raise ValueError(f"{cls.name} does not support multiple instances")
-        return cls.name
-
-    @classmethod
-    def instance_specs(
-        cls,
-        section: Any,
-        *,
-        enabled_only: bool = True,
-    ) -> list[ChannelInstanceSpec]:
-        """Expand persisted config into independently managed runtime instances."""
-        activation = ChannelActivation.from_config(section)
-        if enabled_only and not activation.resolve():
-            return []
-        return [
-            ChannelInstanceSpec(
-                instance_id="default",
-                config=section,
-            )
-        ]
-
-    @classmethod
-    def supports_multiple_instances(cls) -> bool:
-        """Return whether this channel overrides the single-instance contract."""
-        return cls.instance_specs.__func__ is not BaseChannel.instance_specs.__func__
-
-    @classmethod
-    def update_instance_config(
-        cls,
-        section: Any,
-        values: dict[str, Any],
-        *,
-        instance_id: str = "default",
-    ) -> dict[str, Any]:
-        """Persist editable values while preserving the channel-owned storage shape."""
-        if instance_id not in {"", "default"}:
-            raise ValueError(f"{cls.name} does not support multiple instances")
-        return values
-
-    @classmethod
-    def feature_instances(
-        cls,
-        section: Any,
-        *,
-        setup_spec: ChannelSetupSpec | None = None,
-    ) -> list[dict[str, Any]] | None:
-        """Return optional name, display_name, or avatar_url overrides by instance id."""
-        return None
 
     @classmethod
     def refresh_feature_metadata(

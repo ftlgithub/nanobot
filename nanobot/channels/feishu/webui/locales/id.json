@@ -40,6 +40,13 @@
       "allowFrom": {
         "label": "Pengguna yang diizinkan",
         "placeholder": "ID pengguna, dipisahkan koma"
+      },
+      "topicIsolation": {
+        "label": "Isolasi topik",
+        "choices": {
+          "true": "Sesi terpisah untuk setiap topik",
+          "false": "Satu sesi bersama untuk grup"
+        }
       }
     }
   },

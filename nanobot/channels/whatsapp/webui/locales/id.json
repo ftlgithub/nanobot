@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "Hubungkan WhatsApp",
     "docsLabel": "Buka panduan WhatsApp",
+    "officialLabel": "Buka bantuan WhatsApp",
     "tryIt": "Setelah login terminal selesai, kirim DM ke akun yang terhubung.",
     "summary": "WhatsApp terhubung dengan memindai kode QR dari akun yang akan menjalankan bot.",
     "steps": [

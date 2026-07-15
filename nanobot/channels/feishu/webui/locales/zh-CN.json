@@ -41,6 +41,13 @@
       "allowFrom": {
         "label": "允许的用户",
         "placeholder": "用户 ID，用逗号分隔"
+      },
+      "topicIsolation": {
+        "label": "话题隔离",
+        "choices": {
+          "true": "每个话题使用独立会话",
+          "false": "群聊共用一个会话"
+        }
       }
     }
   },

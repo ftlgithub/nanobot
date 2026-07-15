@@ -1285,6 +1285,13 @@ async def test_channel_configure_route_preserves_existing_channel_values(
     assert response.status_code == 200
     body = json.loads(response.body.decode())
     assert body["saved_keys"] == ["channels.discord.allowChannels"]
+    discord = next(
+        feature
+        for feature in body["nanobot_features"]["features"]
+        if feature["name"] == "discord"
+    )
+    assert discord["configured"] is True
+    assert discord["config_values"]["channels.discord.allowChannels"] == "new-channel"
     data = json.loads(config_path.read_text(encoding="utf-8"))
     assert data["channels"]["discord"] == {
         "enabled": True,

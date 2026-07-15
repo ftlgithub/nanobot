@@ -29,6 +29,10 @@
           "open": "所有訊息",
           "allowlist": "允許清單"
         }
+      },
+      "allowFrom": {
+        "label": "允許的使用者",
+        "placeholder": "使用者 ID，以逗號分隔"
       }
     }
   }

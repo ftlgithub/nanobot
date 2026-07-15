@@ -41,6 +41,13 @@
       "allowFrom": {
         "label": "允許的使用者",
         "placeholder": "使用者 ID，以逗號分隔"
+      },
+      "topicIsolation": {
+        "label": "主題隔離",
+        "choices": {
+          "true": "每個主題使用獨立工作階段",
+          "false": "群組共用一個工作階段"
+        }
       }
     }
   },

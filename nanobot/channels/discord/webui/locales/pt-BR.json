@@ -29,6 +29,10 @@
           "open": "Todas as mensagens",
           "allowlist": "Lista de permissão"
         }
+      },
+      "allowFrom": {
+        "label": "Usuários permitidos",
+        "placeholder": "IDs de usuário separados por vírgulas"
       }
     }
   }

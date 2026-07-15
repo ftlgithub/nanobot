@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "WhatsApp 연결",
     "docsLabel": "WhatsApp 설정 가이드 열기",
+    "officialLabel": "WhatsApp 도움말 열기",
     "tryIt": "터미널 로그인이 끝나면 연결된 계정으로 WhatsApp DM을 보내세요.",
     "summary": "봇을 실행할 WhatsApp 계정으로 QR 코드를 스캔해 연결합니다.",
     "steps": [

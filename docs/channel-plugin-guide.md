@@ -28,6 +28,7 @@ Both extension paths expose generic settings through `ChannelPlugin.setup`. Cust
 |---------|---------------------------|
 | Runtime behavior and platform SDK use | `runtime.py` and package-local helpers |
 | Writable settings fields, types, defaults, requirements, secret handling, and validation | `ChannelPlugin.setup` in `manifest.py` |
+| Persisted config expansion, instance updates, and runtime naming | `ChannelPlugin.management` backed by a dependency-free module |
 | Discovery metadata and lazy runtime target | `PLUGIN` in `manifest.py` |
 | Built-in WebUI structure, components, URLs, field keys, actions, and preset values | `webui/index.ts` or `webui/index.tsx` |
 | Channel-specific user-facing copy | `webui/locales/<locale>.json` |
@@ -189,7 +190,7 @@ build-backend = "hatchling.build"
 packages = ["nanobot_channel_webhook"]
 ```
 
-The key (`webhook`) becomes the config section name and must equal `PLUGIN.name`. The value must resolve to a `ChannelPlugin`; registering a `BaseChannel` class directly is not supported.
+The key (`webhook`) becomes the config section name and must equal `PLUGIN.name`. Channel names must start with a letter and may contain letters, digits, underscores, or hyphens. The value must resolve to a `ChannelPlugin`; registering a `BaseChannel` class directly is not supported.
 
 ### 3. Install & Configure
 
@@ -213,7 +214,7 @@ Edit `~/.nanobot/config.json`:
 }
 ```
 
-nanobot always loads the dependency-free descriptor during discovery but imports the runtime target only when activation or a management action needs it. Single-instance and multi-instance channels use the same activation rules regardless of whether their descriptor came from a built-in package or an entry point.
+nanobot always loads the dependency-free descriptor during discovery but imports the runtime target only when starting or enabling a channel, or when performing an explicit runtime-only action such as metadata refresh. Status, configuration, and disable operations do not need the runtime; enable uses the descriptor adapter to persist state after the runtime is available. Single-instance and multi-instance channels use the same activation rules regardless of whether their descriptor came from a built-in package or an entry point.
 
 ### 4. Run & Test
 
@@ -241,6 +242,8 @@ Use this section when changing the nanobot repository itself. Every built-in cha
 nanobot/channels/<channel>/
 ├── __init__.py                 # lazy compatibility exports; no eager platform SDK import
 ├── manifest.py                 # dependency-free ChannelPlugin and ChannelSetupSpec
+├── config.py                   # optional dependency-free config model and defaults
+├── instances.py                # optional dependency-free multi-instance management adapter
 ├── runtime.py                  # BaseChannel implementation and platform SDK imports
 ├── tests/                      # channel-specific Python tests
 └── webui/                      # optional, compiled into the shared WebUI
@@ -256,7 +259,7 @@ Do not add a built-in runtime module directly under `nanobot/channels/`, create 
 
 `manifest.py` exports a typed `ChannelPlugin` whose `runtime` target is an absolute import target, such as `nanobot.channels.telegram.runtime:TelegramChannel`; using `f"{__package__}.runtime:TelegramChannel"` keeps it package-owned without repeating the package path. Discovery imports the manifest before it knows whether the optional platform dependency is installed, so `manifest.py` must not import `runtime.py` or any platform SDK. Keep historical package imports lazy in `__init__.py` for the same reason.
 
-The manifest owns the channel name, display name, setup contract, optional dependency extra, capabilities, default activation, and optional WebUI entry path. Its `multi_instance` setup value must agree with whether the runtime overrides `instance_specs()`.
+The manifest owns the channel name, display name, setup contract, management adapter, optional dependency extra, capabilities, default activation, and optional WebUI entry path. `ChannelSetupSpec.multi_instance` must agree with `ChannelPlugin.management.multi_instance`; descriptor construction rejects a mismatch before importing the runtime.
 
 Use the small constructors in [`nanobot/channels/_manifest.py`](../nanobot/channels/_manifest.py) for declarative field and requirement definitions. Use [`nanobot/channels/dingtalk/manifest.py`](../nanobot/channels/dingtalk/manifest.py) as a compact single-instance example and [`nanobot/channels/feishu/`](../nanobot/channels/feishu/) as a multi-instance example.
 
@@ -396,10 +399,6 @@ nanobot channels login <channel_name> --force  # re-authenticate
 | `_handle_message(sender_id, chat_id, content, media?, metadata?, session_key?)` | **Call this when you receive a message.** Checks `is_allowed()`, then publishes to the bus. Automatically sets `_wants_stream` if `supports_streaming` is true. |
 | `is_allowed(sender_id)` | Checks against `config.allow_from`; `"*"` allows all, `[]` denies all. |
 | `default_config()` (classmethod) | Returns default config dict for `nanobot onboard`. Override to declare your fields. |
-| `runtime_name(instance_id)` (classmethod) | Returns the runtime routing key. Override only for multi-instance channels. |
-| `instance_specs(section, enabled_only=True)` (classmethod) | Expands persisted config into typed runtime instances. Override only for multi-instance channels. |
-| `update_instance_config(section, values, instance_id)` (classmethod) | Writes one instance while preserving the plugin-owned storage shape. |
-| `feature_instances(section, setup_spec)` (classmethod) | Optionally overrides instance names, display names, or avatars for settings consumers. |
 | `refresh_feature_metadata(config_path, instance_id)` (classmethod) | Optionally refreshes saved display metadata after an explicit settings action. It is never called by a read-only feature GET. |
 | `transcribe_audio(file_path)` | Transcribes audio via the shared top-level `transcription` config (if configured). |
 | `supports_streaming` (property) | `True` when config has `"streaming": true` **and** subclass overrides `send_delta()`. |
@@ -411,11 +410,13 @@ nanobot channels login <channel_name> --force  # re-authenticate
 
 ### Optional management contract
 
-Management hooks are declared on `BaseChannel`; plugins do not need to discover private method names or duplicate WebUI routing logic. Setup metadata belongs only to the descriptor, so runtime classes do not implement a parallel setup contract:
+Persisted-state management belongs to `ChannelPlugin.management`, not `BaseChannel`. Keep the adapter and anything it imports free of optional platform SDKs so status, settings, and disable operations still work when the runtime cannot be imported. Runtime classes own network lifecycle, message delivery, interactive login, enable-time availability checks, and explicit runtime-only actions such as metadata refresh.
 
 ```python
 from nanobot.channels.contracts import ChannelFieldSpec, ChannelSetupSpec, SetupRequirement
 from nanobot.channels.plugin import ChannelPlugin
+
+from .instances import MANAGEMENT
 
 PLUGIN = ChannelPlugin(
     name="webhook",
@@ -431,25 +432,60 @@ PLUGIN = ChannelPlugin(
             ),
         },
         required=(SetupRequirement.field("token"),),
+        multi_instance=True,
     ),
+    management=MANAGEMENT,
+)
+```
+
+`instances.py` then exports the dependency-free adapter assembled from channel-owned callbacks:
+
+```python
+from typing import Any
+
+from nanobot.channels.contracts import ChannelInstanceSpec, ChannelManagementSpec
+
+from .config import default_config
+
+
+def instance_specs(section: Any, *, enabled_only: bool = True) -> list[ChannelInstanceSpec]:
+    ...  # Expand the persisted channel-owned envelope.
+
+
+def update_instance_config(
+    section: Any,
+    values: dict[str, Any],
+    *,
+    instance_id: str = "default",
+) -> dict[str, Any]:
+    ...  # Update one instance without discarding sibling data.
+
+
+MANAGEMENT = ChannelManagementSpec(
+    multi_instance=True,
+    default_config=default_config,
+    instance_specs=instance_specs,
+    update_instance_config=update_instance_config,
 )
 ```
 
 `ChannelSetupSpec` is authoritative for writable field names, field types, choices, defaults, required setup, secret redaction, and optional backend validation. The settings API rejects fields outside this contract.
 
-Multi-instance plugins additionally return `ChannelInstanceSpec` objects from `instance_specs()` and preserve their persisted envelope in `update_instance_config()`. Their descriptor must set `ChannelSetupSpec(multi_instance=True)`; nanobot rejects a descriptor/runtime instance-mode mismatch. The shared contract enforces these invariants:
+The dependency-free `MANAGEMENT` value is a `ChannelManagementSpec`. Multi-instance plugins provide `instance_specs(section, enabled_only=True)` and `update_instance_config(section, values, instance_id=...)`; they may also provide `default_config`, `runtime_name`, and presentation-only `feature_instances`. Single-instance plugins can use the default adapter or provide only `default_config`.
+
+Multi-instance adapters return `ChannelInstanceSpec` objects and preserve their persisted envelope when updating one instance. Their descriptor must set both `ChannelSetupSpec(multi_instance=True)` and `ChannelManagementSpec(multi_instance=True)`. The shared contract enforces these invariants:
 
 - every `instance_id` is non-empty and unique;
-- `runtime_name(instance_id)` is the single source of routing names, and every derived name is unique and is either the channel name or starts with `<channel-name>.`;
+- the management adapter's `runtime_name(channel_name, instance_id)` is the single source of routing names, and every derived name is unique and is either the channel name or starts with `<channel-name>.`;
 - runtime names cannot overwrite a runtime already owned by another channel;
 - settings instance summaries are generated from `instance_specs()` and `ChannelPlugin.setup`. They contain the authoritative `enabled` and `configured` state plus secret-safe `config_values` and `configured_fields` for the generic instance editor;
-- `feature_instances()` may return `None` or presentation overrides containing an `id` plus `name`, `display_name`, or `avatar_url`. It cannot override runtime state or the configuration snapshot.
+- the management adapter's `feature_instances()` may return `None` or presentation overrides containing an `id` plus `name`, `display_name`, or `avatar_url`. It cannot override runtime state or the configuration snapshot.
 
-`ChannelInstanceSpec` contains only `instance_id` and the instance config; nanobot derives its runtime name. Single-instance plugins keep ownership of their entire config, including a field named `instances`. Only plugins that override `instance_specs()` opt into instance expansion.
+`ChannelInstanceSpec` contains only `instance_id` and the instance config; nanobot derives its runtime name through the adapter. Single-instance plugins keep ownership of their entire config, including a field named `instances`. Only plugins whose management spec sets `multi_instance=True` opt into instance expansion.
 
 The entry-point/config section name owns every runtime produced from that section. Class inheritance does not transfer runtime ownership to another entry point.
 
-Return a concrete iterable or generator from `instance_specs()`; nanobot materializes and validates it before constructing any runtime. Raise an exception for malformed persisted data rather than silently changing instance identity. Keep metadata refresh behind `refresh_feature_metadata()` so feature GET requests remain read-only.
+Return a concrete iterable or generator from the adapter's `instance_specs()`; nanobot materializes and validates it before constructing any runtime. Raise an exception for malformed persisted data rather than silently changing instance identity. Keep network-backed metadata refresh behind the runtime's `refresh_feature_metadata()` so feature GET requests remain dependency-free and read-only.
 
 For repository-owned package layout, WebUI ownership, and localization rules, see [Built-in Channel Packages](#built-in-channel-packages).
 

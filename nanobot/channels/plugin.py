@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import importlib
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib.resources import files
 from typing import TYPE_CHECKING, Any
 
-from nanobot.channels.contracts import ChannelSetupSpec
+from nanobot.channels.contracts import ChannelManagementSpec, ChannelSetupSpec
 
 if TYPE_CHECKING:
     from nanobot.channels.base import BaseChannel
@@ -27,6 +28,7 @@ class ChannelPlugin:
     display_name: str
     runtime: str
     setup: ChannelSetupSpec | None = None
+    management: ChannelManagementSpec = ChannelManagementSpec()
     optional_extra: str | None = None
     default_enabled: bool = False
     settings_visible: bool = True
@@ -34,8 +36,11 @@ class ChannelPlugin:
     webui: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.name.isidentifier() or self.name.startswith("_"):
-            raise ValueError("channel plugin name must be a public Python identifier")
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", self.name):
+            raise ValueError(
+                "channel plugin name must start with a letter and contain only letters, "
+                "digits, underscores, or hyphens"
+            )
         module_name, separator, attr_name = self.runtime.partition(":")
         if not separator or not module_name or not attr_name:
             raise ValueError("channel plugin runtime must use 'module:attribute' syntax")
@@ -45,6 +50,13 @@ class ChannelPlugin:
             raise ValueError("channel plugin runtime attribute must be a Python identifier")
         if self.setup is not None and not isinstance(self.setup, ChannelSetupSpec):
             raise TypeError("channel plugin setup must be a ChannelSetupSpec or None")
+        if not isinstance(self.management, ChannelManagementSpec):
+            raise TypeError("channel plugin management must be a ChannelManagementSpec")
+        if self.setup is not None and self.setup.multi_instance != self.management.multi_instance:
+            raise TypeError(
+                f"ChannelPlugin.setup.multi_instance for '{self.name}' must be "
+                f"{self.management.multi_instance} to match ChannelPlugin.management"
+            )
         if self.webui is not None:
             webui = self.webui.replace("\\", "/")
             if webui.startswith("/") or ".." in webui.split("/"):

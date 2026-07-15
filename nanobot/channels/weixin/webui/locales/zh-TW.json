@@ -5,6 +5,7 @@
   "setup": {
     "primaryAction": "連接微信",
     "docsLabel": "開啟微信設定指南",
+    "officialLabel": "開啟微信",
     "tryIt": "二維碼登入完成後，向已連接的帳戶傳送一則微信私訊。",
     "summary": "微信透過二維碼登入，並將帳戶狀態儲存在本機。",
     "steps": [

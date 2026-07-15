@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "Connect WeChat",
     "docsLabel": "Open WeChat setup",
+    "officialLabel": "Open WeChat",
     "tryIt": "After the QR login finishes, send a WeChat DM to the connected account.",
     "summary": "WeChat signs in with a QR code and saves the account state locally.",
     "steps": [

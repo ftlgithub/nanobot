@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "WhatsApp に接続",
     "docsLabel": "WhatsApp 設定ガイドを開く",
+    "officialLabel": "WhatsApp ヘルプを開く",
     "tryIt": "ターミナルでのログイン後、接続したアカウントに WhatsApp の DM を送信します。",
     "summary": "ボットを動かす WhatsApp アカウントで QR コードを読み取って接続します。",
     "steps": [

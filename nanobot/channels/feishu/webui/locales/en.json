@@ -40,6 +40,13 @@
       "allowFrom": {
         "label": "Allowed users",
         "placeholder": "User IDs, comma separated"
+      },
+      "topicIsolation": {
+        "label": "Topic isolation",
+        "choices": {
+          "true": "Separate session for each topic",
+          "false": "One shared session for the group"
+        }
       }
     }
   },

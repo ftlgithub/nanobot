@@ -28,6 +28,7 @@ from nanobot.channels.base import BaseChannel
 from nanobot.channels.contracts import (
     ChannelFieldSpec,
     ChannelInstanceSpec,
+    ChannelManagementSpec,
     ChannelSetupSpec,
     SetupRequirement,
 )
@@ -115,22 +116,6 @@ class _FakeMultiChannel(BaseChannel):
             "token": "",
         }
 
-    @classmethod
-    def runtime_name(cls, instance_id: str = "default") -> str:
-        return cls.name if instance_id == "default" else f"{cls.name}.{instance_id}"
-
-    @classmethod
-    def instance_specs(cls, section, *, enabled_only=True):
-        instances = section.get("instances", []) if isinstance(section, dict) else []
-        return [
-            ChannelInstanceSpec(
-                instance_id=item["id"],
-                config=item,
-            )
-            for item in instances
-            if not enabled_only or item.get("enabled", False)
-        ]
-
     async def start(self) -> None:
         pass
 
@@ -141,23 +126,66 @@ class _FakeMultiChannel(BaseChannel):
         pass
 
 
+def _fake_multi_instance_specs(section, *, enabled_only=True):
+    instances = section.get("instances", []) if isinstance(section, dict) else []
+    return [
+        ChannelInstanceSpec(
+            instance_id=item["id"],
+            config=item,
+        )
+        for item in instances
+        if not enabled_only or item.get("enabled", False)
+    ]
+
+
+def _fake_multi_update(section, values, *, instance_id="default"):
+    updated = dict(section)
+    instances = [dict(item) for item in section.get("instances", [])]
+    for item in instances:
+        if item.get("id") == instance_id:
+            item.update(values)
+            break
+    updated["instances"] = instances
+    return updated
+
+
+def _fake_multi_management() -> ChannelManagementSpec:
+    return ChannelManagementSpec(
+        multi_instance=True,
+        default_config=_FakeMultiChannel.default_config,
+        instance_specs=_fake_multi_instance_specs,
+        update_instance_config=_fake_multi_update,
+        runtime_name=lambda name, instance_id: (
+            name if instance_id == "default" else f"{name}.{instance_id}"
+        ),
+    )
+
+
 def _channel_plugin(
     channel_cls: type[BaseChannel],
     *,
     setup: ChannelSetupSpec | None = None,
     optional_extra: str | None = None,
     default_enabled: bool = False,
+    management: ChannelManagementSpec | None = None,
 ) -> ChannelPlugin:
     """Create a descriptor whose lazy runtime resolves inside this test module."""
     runtime_attr = f"_runtime_{channel_cls.name.replace('-', '_')}"
     globals()[runtime_attr] = channel_cls
-    if setup is None and channel_cls.supports_multiple_instances():
+    if management is None:
+        management = (
+            _fake_multi_management()
+            if issubclass(channel_cls, _FakeMultiChannel)
+            else ChannelManagementSpec(default_config=channel_cls.default_config)
+        )
+    if setup is None and management.multi_instance:
         setup = ChannelSetupSpec(fields={}, multi_instance=True)
     return ChannelPlugin(
         name=channel_cls.name,
         display_name=channel_cls.display_name,
         runtime=f"{__name__}:{runtime_attr}",
         setup=setup,
+        management=management,
         optional_extra=optional_extra,
         default_enabled=default_enabled,
     )
@@ -370,17 +398,6 @@ def test_multi_plugin_action_defaults_to_default_instance(
     class _ManagedMultiPlugin(_FakeMultiChannel):
         name = "managedmulti"
 
-        @classmethod
-        def update_instance_config(cls, section, values, *, instance_id="default"):
-            updated = dict(section)
-            instances = [dict(item) for item in section.get("instances", [])]
-            for item in instances:
-                if item.get("id") == instance_id:
-                    item.update(values)
-                    break
-            updated["instances"] = instances
-            return updated
-
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps({
@@ -397,7 +414,10 @@ def test_multi_plugin_action_defaults_to_default_instance(
         encoding="utf-8",
     )
     monkeypatch.setattr(loader, "_current_config_path", config_path)
-    _stub_channel_registry(monkeypatch, _channel_plugin(_ManagedMultiPlugin))
+    _stub_channel_registry(
+        monkeypatch,
+        _channel_plugin(_ManagedMultiPlugin, management=_fake_multi_management()),
+    )
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
 
     disabled = nanobot_features_action("disable", {"name": ["managedmulti"]})
@@ -568,9 +588,8 @@ def test_plugin_contract_error_is_isolated_in_feature_payload(monkeypatch):
         name = "broken"
         display_name = "Broken"
 
-        @classmethod
-        def instance_specs(cls, section, *, enabled_only=True):
-            raise ValueError("malformed plugin instance config")
+    def broken_instance_specs(section, *, enabled_only=True):
+        raise ValueError("malformed plugin instance config")
 
     config = Config.model_validate({
         "channels": {
@@ -580,7 +599,14 @@ def test_plugin_contract_error_is_isolated_in_feature_payload(monkeypatch):
     })
     _stub_channel_registry(
         monkeypatch,
-        _channel_plugin(_BrokenPlugin),
+        _channel_plugin(
+            _BrokenPlugin,
+            management=ChannelManagementSpec(
+                multi_instance=True,
+                instance_specs=broken_instance_specs,
+                update_instance_config=lambda section, values, *, instance_id="default": values,
+            ),
+        ),
         _channel_plugin(_SetupPlugin, setup=_SETUP_PLUGIN_SPEC),
     )
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
@@ -1249,6 +1275,36 @@ def test_plugins_list_shows_available_features(monkeypatch):
     assert " - " not in result.stdout
 
 
+def test_plugins_list_reads_multi_instance_state_without_runtime(monkeypatch):
+    from typer.testing import CliRunner
+
+    from nanobot.cli.commands import app
+
+    plugin = ChannelPlugin(
+        name="managedmulti",
+        display_name="Managed multi",
+        runtime="missing.managedmulti.runtime:ManagedMultiChannel",
+        setup=ChannelSetupSpec(fields={}, multi_instance=True),
+        management=_fake_multi_management(),
+    )
+    config = Config.model_validate({
+        "channels": {
+            "managedmulti": {
+                "instances": [{"id": "default", "enabled": True}],
+            }
+        }
+    })
+    monkeypatch.setattr("nanobot.config.loader.load_config", lambda config_path=None: config)
+    _stub_channel_registry(monkeypatch, plugin)
+    monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
+
+    result = CliRunner().invoke(app, ["plugins", "list"])
+
+    assert result.exit_code == 0
+    assert "managedmulti" in result.stdout
+    assert "yes" in result.stdout
+
+
 def test_plugins_enable_channel_installs_extra_and_writes_config(monkeypatch, tmp_path):
     from typer.testing import CliRunner
 
@@ -1595,8 +1651,52 @@ def test_disable_optional_feature_writes_channel_disabled(monkeypatch, tmp_path)
     assert payload["last_action"]["message"] == "Disabled channel 'websocket'"
 
 
+def test_disable_multi_instance_channel_without_importing_runtime(monkeypatch, tmp_path):
+    from nanobot.optional_features import disable_optional_feature
+
+    plugin = ChannelPlugin(
+        name="managedmulti",
+        display_name="Managed multi",
+        runtime="missing.managedmulti.runtime:ManagedMultiChannel",
+        setup=ChannelSetupSpec(fields={}, multi_instance=True),
+        management=_fake_multi_management(),
+    )
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({
+            "channels": {
+                "managedmulti": {
+                    "instances": [
+                        {"id": "default", "enabled": True},
+                        {"id": "product", "enabled": True},
+                    ]
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
+    _stub_channel_registry(monkeypatch, plugin)
+    monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
+
+    payload = disable_optional_feature(
+        "managedmulti",
+        config_path=config_path,
+        instance_id="product",
+    )
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert [item["enabled"] for item in saved["channels"]["managedmulti"]["instances"]] == [
+        True,
+        False,
+    ]
+    feature = payload["features"][0]
+    assert feature["enabled"] is True
+    assert [item["enabled"] for item in feature["instances"]] == [True, False]
+
+
 def test_feishu_enable_rejects_duplicate_instance_ids_without_writing(tmp_path):
-    from nanobot.channels.feishu import FeishuChannel
+    from nanobot.channels.registry import load_channel_plugin
     from nanobot.optional_features import OptionalFeatureError, set_channel_config_enabled
 
     config_path = tmp_path / "config.json"
@@ -1616,7 +1716,7 @@ def test_feishu_enable_rejects_duplicate_instance_ids_without_writing(tmp_path):
     before = config_path.read_text(encoding="utf-8")
 
     with pytest.raises(OptionalFeatureError, match="duplicate Feishu instance id 'default'"):
-        set_channel_config_enabled(config_path, "feishu", FeishuChannel, True)
+        set_channel_config_enabled(config_path, "feishu", load_channel_plugin("feishu"), True)
 
     assert config_path.read_text(encoding="utf-8") == before
 
@@ -1839,6 +1939,7 @@ def test_optional_features_payload_marks_disabled_feishu_as_configured(monkeypat
 
 
 def test_optional_features_payload_lists_feishu_instances(monkeypatch):
+    from nanobot.channels.plugin import load_builtin_channel_plugin
     from nanobot.optional_features import optional_features_payload
 
     config = Config.model_validate({
@@ -1865,7 +1966,12 @@ def test_optional_features_payload_lists_feishu_instances(monkeypatch):
             }
         }
     })
-    _stub_builtin_channel_registry(monkeypatch, "feishu")
+    plugin = load_builtin_channel_plugin("feishu")
+    assert plugin is not None
+    _stub_channel_registry(
+        monkeypatch,
+        replace(plugin, runtime="missing.feishu.runtime:FeishuChannel"),
+    )
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
 
     payload = optional_features_payload(config=config)

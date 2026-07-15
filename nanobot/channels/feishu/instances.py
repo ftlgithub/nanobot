@@ -7,7 +7,8 @@ from typing import Any
 
 from loguru import logger
 
-from nanobot.channels.contracts import ChannelInstanceSpec
+from nanobot.channels.contracts import ChannelInstanceSpec, ChannelManagementSpec
+from nanobot.channels.feishu.config import feishu_default_config
 from nanobot.config.loader import merge_missing_defaults
 
 DEFAULT_INSTANCE_ID = "default"
@@ -25,6 +26,33 @@ def validate_instance_id(value: str) -> str:
 def runtime_channel_name(base_name: str, instance_id: str) -> str:
     """Return the channel key used for routing messages at runtime."""
     return base_name if instance_id == DEFAULT_INSTANCE_ID else f"{base_name}.{instance_id}"
+
+
+def managed_feishu_instance_specs(
+    section: Any,
+    *,
+    enabled_only: bool = True,
+) -> list[ChannelInstanceSpec]:
+    return feishu_instance_specs(
+        section,
+        feishu_default_config(),
+        enabled_only=enabled_only,
+    )
+
+
+def update_managed_feishu_instance(
+    section: Any,
+    values: dict[str, Any],
+    *,
+    instance_id: str = DEFAULT_INSTANCE_ID,
+) -> dict[str, Any]:
+    existing = section if isinstance(section, dict) else {}
+    return upsert_feishu_instance(
+        existing,
+        feishu_default_config(),
+        instance_id,
+        values,
+    )
 
 
 def _base_feishu_instance_config(defaults: dict[str, Any]) -> dict[str, Any]:
@@ -215,3 +243,25 @@ def update_feishu_instance_preserving_shape(
         return {**section, **values}
 
     return upsert_feishu_instance(section, defaults, instance_id, values)
+
+
+FEISHU_MANAGEMENT = ChannelManagementSpec(
+    multi_instance=True,
+    default_config=feishu_default_config,
+    instance_specs=managed_feishu_instance_specs,
+    update_instance_config=update_managed_feishu_instance,
+    runtime_name=runtime_channel_name,
+)
+
+
+__all__ = [
+    "DEFAULT_INSTANCE_ID",
+    "FEISHU_MANAGEMENT",
+    "canonical_feishu_section",
+    "feishu_app_identity_key",
+    "feishu_instance_specs",
+    "runtime_channel_name",
+    "update_feishu_instance_preserving_shape",
+    "upsert_feishu_instance",
+    "validate_instance_id",
+]

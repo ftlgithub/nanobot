@@ -4,6 +4,7 @@
   "setup": {
     "primaryAction": "Connect WhatsApp",
     "docsLabel": "Open WhatsApp setup",
+    "officialLabel": "Open WhatsApp help",
     "tryIt": "After terminal login finishes, send a WhatsApp DM to the connected account.",
     "summary": "WhatsApp is connected by scanning a QR code from the account that should run the bot.",
     "steps": [

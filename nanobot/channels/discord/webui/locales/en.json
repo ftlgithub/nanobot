@@ -29,6 +29,10 @@
           "open": "All messages",
           "allowlist": "Allowlist"
         }
+      },
+      "allowFrom": {
+        "label": "Allowed users",
+        "placeholder": "User IDs, comma separated"
       }
     }
   }
