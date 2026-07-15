@@ -1792,7 +1792,7 @@ def _show_quick_start_summary(config: Config) -> None:
         )
         has_api_key = is_local or bool(provider_config and provider_config.api_key)
 
-    start_command = "`nanobot gateway`"
+    start_command = "`nanobot webui`"
     next_step = f"Run {start_command}"
     status = "Ready"
     if not has_api_key:
@@ -1803,7 +1803,6 @@ def _show_quick_start_summary(config: Config) -> None:
         ("Status", status),
         ("Next", next_step),
         ("WebSocket channel", "enabled"),
-        ("Open", "http://127.0.0.1:8765"),
     ]
     _print_summary_panel(rows, "Quick Start")
 
