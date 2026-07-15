@@ -18,6 +18,7 @@ from loguru import logger
 STREAM_IDLE_TIMEOUT_ENV = "NANOBOT_STREAM_IDLE_TIMEOUT_S"
 DEFAULT_STREAM_IDLE_TIMEOUT_S = 90.0
 MAX_STREAM_IDLE_TIMEOUT_S = 3600.0
+ERROR_KIND_CONTEXT_OVERFLOW = "context_overflow"
 
 
 def resolve_stream_idle_timeout_s(
@@ -158,7 +159,7 @@ class LLMResponse:
     thinking_blocks: list[dict] | None = None  # Anthropic extended thinking
     # Structured error metadata used by retry policy when finish_reason == "error".
     error_status_code: int | None = None
-    error_kind: str | None = None  # e.g. "timeout", "connection"
+    error_kind: str | None = None  # e.g. "timeout", "connection", "context_overflow"
     error_type: str | None = None  # Provider/type semantic, e.g. insufficient_quota.
     error_code: str | None = None  # Provider/code semantic, e.g. rate_limit_exceeded.
     error_retry_after_s: float | None = None
@@ -176,6 +177,14 @@ class LLMResponse:
         if not self.has_tool_calls:
             return False
         return self.finish_reason in ("tool_calls", "function_call", "stop")
+
+    @property
+    def is_context_overflow_error(self) -> bool:
+        """Whether the provider normalized this response as an input-context overflow."""
+        return (
+            self.finish_reason == "error"
+            and (self.error_kind or "").strip().lower() == ERROR_KIND_CONTEXT_OVERFLOW
+        )
 
 
 @dataclass(frozen=True)
@@ -217,6 +226,13 @@ class LLMProvider(ABC):
     )
     _RETRYABLE_STATUS_CODES = frozenset({408, 409, 429})
     _TRANSIENT_ERROR_KINDS = frozenset({"timeout", "connection"})
+    _CONTEXT_OVERFLOW_ERROR_TOKENS = frozenset({
+        "context_length_exceeded",
+        "context_window_exceeded",
+        "input_too_long",
+        "max_context_length_exceeded",
+        "prompt_too_long",
+    })
     _NON_RETRYABLE_429_ERROR_TOKENS = frozenset({
         "insufficient_quota",
         "quota_exceeded",
@@ -401,6 +417,8 @@ class LLMProvider(ABC):
     @classmethod
     def _is_transient_response(cls, response: LLMResponse) -> bool:
         """Prefer structured error metadata, fallback to text markers for legacy providers."""
+        if response.is_context_overflow_error:
+            return False
         if response.error_should_retry is not None:
             return bool(response.error_should_retry)
 
@@ -446,6 +464,21 @@ class LLMProvider(ABC):
             return None
         token = str(value).strip().lower()
         return token or None
+
+    @classmethod
+    def _normalize_error_response(cls, response: LLMResponse) -> LLMResponse:
+        """Attach provider-independent semantics from structured provider errors."""
+        if response.finish_reason != "error" or response.is_context_overflow_error:
+            return response
+
+        semantic_tokens = {
+            re.sub(r"[^a-z0-9]+", "_", token).strip("_")
+            for value in (response.error_type, response.error_code)
+            if (token := cls._normalize_error_token(value)) is not None
+        }
+        if semantic_tokens & cls._CONTEXT_OVERFLOW_ERROR_TOKENS:
+            response.error_kind = ERROR_KIND_CONTEXT_OVERFLOW
+        return response
 
     @classmethod
     def _extract_error_type_code(cls, payload: Any) -> tuple[str | None, str | None]:
@@ -877,7 +910,7 @@ class LLMProvider(ABC):
         identical_error_count = 0
         while True:
             attempt += 1
-            response = await call(**kw)
+            response = self._normalize_error_response(await call(**kw))
             if response.finish_reason != "error":
                 return response
             last_response = response
@@ -920,7 +953,7 @@ class LLMProvider(ABC):
                     )
                     retry_kw = dict(kw)
                     retry_kw["messages"] = stripped
-                    result = await call(**retry_kw)
+                    result = self._normalize_error_response(await call(**retry_kw))
                     # Permanently strip images from the original messages so
                     # subsequent iterations do not repeat the error-retry cycle.
                     if result.finish_reason != "error":

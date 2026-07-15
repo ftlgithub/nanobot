@@ -22,6 +22,7 @@ from loguru import logger
 from pydantic.alias_generators import to_snake
 
 from nanobot.providers.base import (
+    ERROR_KIND_CONTEXT_OVERFLOW,
     LLMProvider,
     LLMResponse,
     ToolCallRequest,
@@ -51,6 +52,14 @@ _ALLOWED_MSG_KEYS = frozenset({
     "reasoning_content", "extra_content",
 })
 _ALNUM = string.ascii_letters + string.digits
+
+_LOCAL_CONTEXT_OVERFLOW_STATUS_CODES = frozenset({400, 413, 422})
+_LOCAL_CONTEXT_OVERFLOW_ERROR_PHRASES = (
+    "maximum context length is",
+    "input length exceeds the context length",
+    "prompt is longer than the context length currently available",
+    "exceeds the available context",
+)
 
 _STANDARD_TC_KEYS = frozenset({"id", "type", "index", "function"})
 _STANDARD_FN_KEYS = frozenset({"name", "arguments"})
@@ -1503,11 +1512,24 @@ class OpenAICompatProvider(LLMProvider):
         retry_after = LLMProvider._extract_retry_after_from_headers(getattr(response, "headers", None))
         if retry_after is None:
             retry_after = LLMProvider._extract_retry_after(msg)
+        metadata = OpenAICompatProvider._extract_error_metadata(e)
+        status = metadata.get("error_status_code")
+        if (
+            spec
+            and spec.is_local
+            and status in _LOCAL_CONTEXT_OVERFLOW_STATUS_CODES
+            and any(phrase in text for phrase in _LOCAL_CONTEXT_OVERFLOW_ERROR_PHRASES)
+        ):
+            # Local OpenAI-compatible servers do not consistently expose a
+            # semantic error code. Keep their exact, known messages scoped to
+            # this adapter instead of teaching the provider base to guess from
+            # arbitrary 400 response text.
+            metadata["error_kind"] = ERROR_KIND_CONTEXT_OVERFLOW
         return LLMResponse(
             content=msg,
             finish_reason="error",
             retry_after=retry_after,
-            **OpenAICompatProvider._extract_error_metadata(e),
+            **metadata,
         )
 
     # ------------------------------------------------------------------

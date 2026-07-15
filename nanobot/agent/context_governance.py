@@ -20,7 +20,7 @@ from nanobot.utils.helpers import (
     maybe_persist_tool_result,
     truncate_text,
 )
-from nanobot.utils.runtime import ensure_nonempty_tool_result
+from nanobot.utils.runtime import ensure_nonempty_tool_result, with_tool_error_recovery_hint
 
 if TYPE_CHECKING:
     from nanobot.providers.base import LLMProvider
@@ -39,6 +39,11 @@ BACKFILL_CONTENT = "[Tool result unavailable — call was interrupted or lost]"
 PLACEHOLDER_TEXTS = frozenset({
     "[Previous assistant message omitted.]",
 })
+CONTEXT_OVERFLOW_TOOL_RESULT_ERROR = (
+    "Error: The result from `{tool_name}` was too large to fit in the available model "
+    "context, so its content was omitted. Do not repeat the same call unchanged. Try a "
+    "narrower query, request fewer results, read a smaller range, or use another approach."
+)
 
 
 def _tool_call_name_is_valid(tool_call: Any) -> bool:
@@ -375,6 +380,48 @@ class ContextGovernor:
             source,
             len(compacted_tool_call_ids),
         )
+        return updated
+
+    def recover_provider_overflow(
+        self,
+        config: ContextGovernanceConfig,
+        messages: list[dict[str, Any]],
+        prepared_messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]] | None:
+        """Replace the largest current-turn result after a provider overflow.
+
+        The canonical transcript remains untouched. Replacements preserve the assistant/tool
+        pairing while giving the model the recovery instruction used for ordinary tool failures.
+        """
+        inflight_tool_call_ids = {
+            str(message.get("tool_call_id"))
+            for message in messages[config.inflight_start_index:]
+            if message.get("role") == "tool" and message.get("tool_call_id")
+        }
+        if not inflight_tool_call_ids:
+            return None
+
+        candidates = [
+            (len(str(message.get("content") or "")), idx, message)
+            for idx, message in enumerate(prepared_messages)
+            if message.get("role") == "tool"
+            and str(message.get("tool_call_id") or "") in inflight_tool_call_ids
+        ]
+        if not candidates:
+            return None
+
+        original_chars, idx, message = max(candidates, key=lambda candidate: candidate[0])
+        hint = with_tool_error_recovery_hint(
+            CONTEXT_OVERFLOW_TOOL_RESULT_ERROR.format(
+                tool_name=str(message.get("name") or "tool"),
+            )
+        )
+        replacement = dict(message, content=hint)
+        if len(hint) >= original_chars:
+            return None
+
+        updated = [dict(item) for item in prepared_messages]
+        updated[idx] = replacement
         return updated
 
     def snip_history(

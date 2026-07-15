@@ -32,6 +32,12 @@ BUDGET_EXHAUSTED_FINALIZATION_PROMPT = (
     "done, what remains, and the best next step if anything is incomplete."
 )
 
+CONTEXT_OVERFLOW_FALLBACK_MESSAGE = (
+    "I can't complete this request because it exceeds the model's available context window. "
+    "Please reduce the request or tool output, lower the requested response size, or use a "
+    "model with a larger context window."
+)
+
 LENGTH_RECOVERY_PROMPT = (
     "Output limit reached. Continue exactly where you left off "
     "— no recap, no apology. Break remaining work into smaller steps if needed."
@@ -42,6 +48,15 @@ SUSTAINED_GOAL_CONTINUE_PROMPT = (
     "objective using your tools, or call update_goal with action='complete' "
     "if the work is truly finished."
 )
+
+TOOL_ERROR_RECOVERY_HINT = "\n\n[Analyze the error above and try a different approach.]"
+
+
+def with_tool_error_recovery_hint(content: str) -> str:
+    """Append the model-facing recovery hint to a tool error exactly once."""
+    if content.endswith(TOOL_ERROR_RECOVERY_HINT):
+        return content
+    return content + TOOL_ERROR_RECOVERY_HINT
 
 
 def empty_tool_result_message(tool_name: str) -> str:

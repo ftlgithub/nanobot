@@ -33,6 +33,7 @@ from nanobot.utils.helpers import (
 from nanobot.utils.llm_runtime import LLMRuntime
 from nanobot.utils.prompt_templates import render_template
 from nanobot.utils.runtime import (
+    CONTEXT_OVERFLOW_FALLBACK_MESSAGE,
     EMPTY_FINAL_RESPONSE_MESSAGE,
     build_budget_exhausted_finalization_message,
     build_finalization_retry_message,
@@ -41,6 +42,7 @@ from nanobot.utils.runtime import (
     is_blank_text,
     repeated_external_lookup_error,
     repeated_workspace_violation_error,
+    with_tool_error_recovery_hint,
 )
 
 GoalContinueMessage = str | Callable[[], str | None]
@@ -391,6 +393,34 @@ class AgentRunner:
             )
             await hook.before_iteration(context)
             response = await self._request_model(spec, messages_for_model, hook, context)
+            if response.is_context_overflow_error:
+                overflow_retry = await self._request_context_overflow_retry(
+                    spec,
+                    governance_config,
+                    messages,
+                    messages_for_model,
+                    hook,
+                    context,
+                )
+                if overflow_retry is not None:
+                    messages_for_model, response = overflow_retry
+
+            if response.is_context_overflow_error:
+                logger.warning(
+                    "Context overflow for {} could not be recovered with tool-result hints; "
+                    "using fallback",
+                    spec.session_key or "default",
+                )
+                final_content = CONTEXT_OVERFLOW_FALLBACK_MESSAGE
+                stop_reason = "context_overflow"
+                self._append_final_message(messages, final_content)
+                context.final_content = final_content
+                context.stop_reason = stop_reason
+                if hook.wants_streaming():
+                    await hook.on_stream_end(context, resuming=False)
+                await hook.after_iteration(context)
+                break
+
             context.response = response
             context.tool_calls = list(response.tool_calls)
 
@@ -925,6 +955,44 @@ class AgentRunner:
         retry_messages.append({"role": "user", "content": note})
         return retry_messages
 
+    async def _request_context_overflow_retry(
+        self,
+        spec: AgentRunSpec,
+        governance_config: ContextGovernanceConfig,
+        messages: list[dict[str, Any]],
+        messages_for_model: list[dict[str, Any]],
+        hook: AgentHook,
+        context: AgentHookContext,
+    ) -> tuple[list[dict[str, Any]], LLMResponse] | None:
+        try:
+            retry_messages = self.context_governor.recover_provider_overflow(
+                governance_config,
+                messages,
+                messages_for_model,
+            )
+        except Exception:
+            logger.exception(
+                "Provider context-overflow recovery failed for {}",
+                spec.session_key or "default",
+            )
+            return None
+
+        if retry_messages is None:
+            return None
+
+        logger.warning(
+            "Provider rejected the context for {}; retrying once with an "
+            "oversized tool-result hint",
+            spec.session_key or "default",
+        )
+        response = await self._request_model(
+            spec,
+            retry_messages,
+            hook,
+            context,
+        )
+        return retry_messages, response
+
     async def _request_finalization_retry(
         self,
         spec: AgentRunSpec,
@@ -1149,7 +1217,6 @@ class AgentRunner:
     ) -> tuple[Any, dict[str, str], BaseException | None]:
         hook = hook or AgentHook()
         context = context or AgentHookContext(iteration=0, messages=[])
-        hint = "\n\n[Analyze the error above and try a different approach.]"
         lookup_error = repeated_external_lookup_error(
             tool_call.name,
             tool_call.arguments,
@@ -1161,9 +1228,10 @@ class AgentRunner:
                 "status": "error",
                 "detail": "repeated external lookup blocked",
             }
+            hinted_error = with_tool_error_recovery_hint(lookup_error)
             if spec.fail_on_tool_error:
-                return lookup_error + hint, event, RuntimeError(lookup_error)
-            return lookup_error + hint, event, None
+                return hinted_error, event, RuntimeError(lookup_error)
+            return hinted_error, event, None
         prepare_call = getattr(spec.tools, "prepare_call", None)
         tool, params, prep_error = None, tool_call.arguments, None
         if callable(prepare_call):
@@ -1177,16 +1245,17 @@ class AgentRunner:
                 "status": "error",
                 "detail": prep_error.split(": ", 1)[-1][:120],
             }
+            hinted_error = with_tool_error_recovery_hint(prep_error)
             handled = self._classify_violation(
                 raw_text=prep_error,
-                soft_payload=prep_error + hint,
+                soft_payload=hinted_error,
                 event=event,
                 tool_call=tool_call,
                 workspace_violation_counts=workspace_violation_counts,
             )
             if handled is not None:
                 return handled
-            return prep_error + hint, event, (
+            return hinted_error, event, (
                 RuntimeError(prep_error) if spec.fail_on_tool_error else None
             )
         await hook.before_execute_tool(context, tool_call, tool, params)
@@ -1226,9 +1295,10 @@ class AgentRunner:
                 "status": "error",
                 "detail": result.replace("\n", " ").strip()[:120],
             }
+            hinted_result = with_tool_error_recovery_hint(result)
             handled = self._classify_violation(
                 raw_text=result,
-                soft_payload=result + hint,
+                soft_payload=hinted_result,
                 event=event,
                 tool_call=tool_call,
                 workspace_violation_counts=workspace_violation_counts,
@@ -1236,8 +1306,8 @@ class AgentRunner:
             if handled is not None:
                 return handled
             if spec.fail_on_tool_error:
-                return result + hint, event, RuntimeError(result)
-            return result + hint, event, None
+                return hinted_result, event, RuntimeError(result)
+            return hinted_result, event, None
 
         await hook.after_execute_tool(context, tool_call, tool, params, result)
 

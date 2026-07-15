@@ -3,8 +3,9 @@ from types import SimpleNamespace
 import pytest
 
 from nanobot.providers.anthropic_provider import AnthropicProvider
-from nanobot.providers.base import LLMProvider, LLMResponse
+from nanobot.providers.base import ERROR_KIND_CONTEXT_OVERFLOW, LLMProvider, LLMResponse
 from nanobot.providers.openai_compat_provider import OpenAICompatProvider
+from nanobot.providers.registry import find_by_name
 
 
 def _fake_response(
@@ -51,6 +52,53 @@ def test_openai_handle_error_marks_timeout_kind() -> None:
 
     assert response.finish_reason == "error"
     assert response.error_kind == "timeout"
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "message"),
+    [
+        (
+            "ollama",
+            "the prompt is longer than the context length currently available to the model",
+        ),
+        (
+            "vllm",
+            "This model's maximum context length is 8192 tokens. However, you requested 9000.",
+        ),
+    ],
+)
+def test_local_openai_provider_marks_known_context_overflow(
+    provider_name: str,
+    message: str,
+) -> None:
+    class FakeStatusError(Exception):
+        pass
+
+    err = FakeStatusError(message)
+    err.status_code = 400
+    err.body = {"error": {"message": message, "type": "BadRequestError", "code": 400}}
+
+    response = OpenAICompatProvider._handle_error(
+        err,
+        spec=find_by_name(provider_name),
+    )
+
+    assert response.error_kind == ERROR_KIND_CONTEXT_OVERFLOW
+    assert response.is_context_overflow_error
+
+
+def test_local_openai_provider_does_not_guess_context_overflow_from_other_400() -> None:
+    class FakeStatusError(Exception):
+        pass
+
+    err = FakeStatusError("model requires more system memory")
+    err.status_code = 400
+    err.body = {"error": {"message": str(err)}}
+
+    response = OpenAICompatProvider._handle_error(err, spec=find_by_name("ollama"))
+
+    assert response.error_kind is None
+    assert not response.is_context_overflow_error
 
 
 def test_anthropic_handle_error_extracts_structured_metadata() -> None:

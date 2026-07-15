@@ -3,7 +3,12 @@ import copy
 
 import pytest
 
-from nanobot.providers.base import GenerationSettings, LLMProvider, LLMResponse
+from nanobot.providers.base import (
+    ERROR_KIND_CONTEXT_OVERFLOW,
+    GenerationSettings,
+    LLMProvider,
+    LLMResponse,
+)
 
 
 class ScriptedProvider(LLMProvider):
@@ -74,6 +79,49 @@ async def test_chat_with_retry_does_not_retry_non_transient_error(monkeypatch) -
     assert response.content == "401 unauthorized"
     assert provider.calls == 1
     assert delays == []
+
+
+@pytest.mark.asyncio
+async def test_chat_with_retry_normalizes_context_overflow_without_retry() -> None:
+    provider = ScriptedProvider([
+        LLMResponse(
+            content="request rejected",
+            finish_reason="error",
+            error_status_code=500,
+            error_code="context_length_exceeded",
+            error_should_retry=True,
+        ),
+    ])
+
+    result = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
+
+    assert result.error_kind == ERROR_KIND_CONTEXT_OVERFLOW
+    assert result.is_context_overflow_error
+    assert provider.calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    [
+        "The output contained too many tokens",
+        "Error: prompt is too long for this model",
+    ],
+)
+async def test_chat_with_retry_does_not_guess_context_overflow_from_text(message) -> None:
+    provider = ScriptedProvider([
+        LLMResponse(
+            content=message,
+            finish_reason="error",
+            error_status_code=400,
+        ),
+    ])
+
+    result = await provider.chat_with_retry(messages=[{"role": "user", "content": "hello"}])
+
+    assert result.error_kind is None
+    assert not result.is_context_overflow_error
+    assert provider.calls == 1
 
 
 @pytest.mark.asyncio
