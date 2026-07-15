@@ -30,6 +30,12 @@ describe("channel UI contributions", () => {
     expect(channelUiPresentation("wechat")?.displayName).toBe("WeChat");
   });
 
+  it("uses the DingTalk Open Platform brand mark", () => {
+    expect(channelUiPresentation("dingtalk")?.logoUrl).toBe(
+      "https://img.alicdn.com/imgextra/i3/O1CN01WMvMRG1ks3Ixc9x1v_!!6000000004738-55-tps-32-32.svg",
+    );
+  });
+
   it("keeps the core setup panel independent of concrete channel plugins", () => {
     const source = readFileSync(
       resolve(process.cwd(), "src/components/settings/channels/ChannelSetupPanel.tsx"),
