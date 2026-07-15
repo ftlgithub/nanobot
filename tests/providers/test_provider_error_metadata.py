@@ -55,36 +55,108 @@ def test_openai_handle_error_marks_timeout_kind() -> None:
 
 
 @pytest.mark.parametrize(
-    ("provider_name", "api_base", "message"),
+    ("provider_name", "api_base", "status_code", "message"),
     [
-        (
+        pytest.param(
             "ollama",
             None,
-            "the prompt is longer than the context length currently available to the model",
+            400,
+            "the prompt is longer than the context length currently available to the model; "
+            "shorten the prompt, adjust the context length in settings",
+            id="ollama-completion",
         ),
-        (
+        pytest.param(
+            "ollama",
+            None,
+            400,
+            "the input length exceeds the context length",
+            id="ollama-embedding",
+        ),
+        pytest.param(
             "vllm",
             None,
+            400,
             "This model's maximum context length is 8192 tokens. However, you requested 9000.",
+            id="vllm",
         ),
-        (
+        pytest.param(
+            "lm_studio",
+            None,
+            400,
+            "Trying to keep the first 111490 tokens when context the overflows. However, the "
+            "model is loaded with context length of only 32768 tokens, which is not enough.",
+            id="lm-studio",
+        ),
+        pytest.param(
+            "lm_studio",
+            None,
+            400,
+            "Context size has been exceeded.",
+            id="lm-studio-context-size",
+        ),
+        pytest.param(
+            "atomic_chat",
+            None,
+            500,
+            "the request exceeds the available context size. Try increasing context size or "
+            "enable context shift",
+            id="atomic-chat-llama-cpp",
+        ),
+        pytest.param(
+            "atomic_chat",
+            None,
+            500,
+            "Context size exceeded: requested 9000 tokens but the model only supports 8192.",
+            id="atomic-chat-mlx",
+        ),
+        pytest.param(
+            "atomic_chat",
+            None,
+            503,
+            "context window overflow",
+            id="atomic-chat-503",
+        ),
+        pytest.param(
+            "ovms",
+            None,
+            400,
+            "Input length exceeds pipeline capabilities: 9000 > 8192",
+            id="ovms-continuous-batching",
+        ),
+        pytest.param(
+            "ovms",
+            None,
+            400,
+            "Input length exceeds the maximum allowed length",
+            id="ovms-legacy",
+        ),
+        pytest.param(
             "custom",
             "http://localhost:11434/v1",
+            400,
             "This model's maximum context length is 8192 tokens. However, you requested 9000.",
+            id="custom-local-vllm",
         ),
     ],
 )
 def test_local_openai_provider_marks_known_context_overflow(
     provider_name: str,
     api_base: str | None,
+    status_code: int,
     message: str,
 ) -> None:
     class FakeStatusError(Exception):
         pass
 
     err = FakeStatusError(message)
-    err.status_code = 400
-    err.body = {"error": {"message": message, "type": "BadRequestError", "code": 400}}
+    err.status_code = status_code
+    err.body = {
+        "error": {
+            "message": message,
+            "type": "BadRequestError" if status_code < 500 else "server_error",
+            "code": status_code,
+        }
+    }
 
     response = OpenAICompatProvider._handle_error(
         err,
@@ -97,26 +169,29 @@ def test_local_openai_provider_marks_known_context_overflow(
 
 
 @pytest.mark.parametrize(
-    ("provider_name", "api_base", "message"),
+    ("provider_name", "api_base", "status_code", "message"),
     [
-        ("ollama", None, "model requires more system memory"),
+        ("ollama", None, 400, "model requires more system memory"),
+        ("atomic_chat", None, 500, "backend temporarily unavailable"),
         (
             "custom",
             "https://api.example.com/v1",
+            400,
             "This model's maximum context length is 8192 tokens. However, you requested 9000.",
         ),
     ],
 )
-def test_openai_provider_does_not_guess_context_overflow_from_other_400(
+def test_openai_provider_does_not_guess_context_overflow_from_unrelated_errors(
     provider_name: str,
     api_base: str | None,
+    status_code: int,
     message: str,
 ) -> None:
     class FakeStatusError(Exception):
         pass
 
     err = FakeStatusError(message)
-    err.status_code = 400
+    err.status_code = status_code
     err.body = {"error": {"message": str(err)}}
 
     response = OpenAICompatProvider._handle_error(

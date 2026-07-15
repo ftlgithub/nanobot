@@ -82,13 +82,24 @@ async def test_chat_with_retry_does_not_retry_non_transient_error(monkeypatch) -
 
 
 @pytest.mark.asyncio
-async def test_chat_with_retry_normalizes_context_overflow_without_retry() -> None:
+@pytest.mark.parametrize(
+    ("error_type", "error_code"),
+    [
+        (None, "context_length_exceeded"),
+        ("exceed_context_size_error", None),
+    ],
+)
+async def test_chat_with_retry_normalizes_context_overflow_without_retry(
+    error_type: str | None,
+    error_code: str | None,
+) -> None:
     provider = ScriptedProvider([
         LLMResponse(
             content="request rejected",
             finish_reason="error",
             error_status_code=500,
-            error_code="context_length_exceeded",
+            error_type=error_type,
+            error_code=error_code,
             error_should_retry=True,
         ),
     ])

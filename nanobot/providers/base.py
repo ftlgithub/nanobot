@@ -229,6 +229,7 @@ class LLMProvider(ABC):
     _CONTEXT_OVERFLOW_ERROR_TOKENS = frozenset({
         "context_length_exceeded",
         "context_window_exceeded",
+        "exceed_context_size_error",
         "input_too_long",
         "max_context_length_exceeded",
         "prompt_too_long",

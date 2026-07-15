@@ -53,12 +53,23 @@ _ALLOWED_MSG_KEYS = frozenset({
 })
 _ALNUM = string.ascii_letters + string.digits
 
-_LOCAL_CONTEXT_OVERFLOW_STATUS_CODES = frozenset({400, 413, 422})
+_LOCAL_CONTEXT_OVERFLOW_STATUS_CODES = frozenset({400, 413, 422, 500, 503})
 _LOCAL_CONTEXT_OVERFLOW_ERROR_PHRASES = (
+    # vLLM
     "maximum context length is",
+    # Ollama
     "input length exceeds the context length",
     "prompt is longer than the context length currently available",
-    "exceeds the available context",
+    # llama.cpp / Atomic Chat
+    "exceeds the available context size",
+    "context size exceeded",
+    "context window overflow",
+    # LM Studio
+    "trying to keep the first",
+    "context size has been exceeded",
+    # OpenVINO Model Server
+    "input length exceeds pipeline capabilities",
+    "input length exceeds the maximum allowed length",
 )
 
 _STANDARD_TC_KEYS = frozenset({"id", "type", "index", "function"})
@@ -1522,7 +1533,7 @@ class OpenAICompatProvider(LLMProvider):
             # Local OpenAI-compatible servers do not consistently expose a
             # semantic error code. Keep their exact, known messages scoped to
             # this adapter instead of teaching the provider base to guess from
-            # arbitrary 400 response text.
+            # arbitrary error response text.
             metadata["error_kind"] = ERROR_KIND_CONTEXT_OVERFLOW
         return LLMResponse(
             content=msg,
