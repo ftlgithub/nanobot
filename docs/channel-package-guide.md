@@ -1,26 +1,14 @@
-# Channel Plugin Guide
+# Channel Package Guide
 
-Use this guide to build an external channel plugin or contribute a self-contained built-in channel to the nanobot repository.
+Use this guide to add a self-contained channel package to the nanobot repository. A channel is part of nanobot when its package lives at `nanobot/channels/<channel>/`; there is no separate external channel-plugin path.
 
-> **Note:** We recommend developing channel plugins against a source checkout of nanobot (`python -m pip install -e .`) rather than a PyPI release, so you always have access to the latest base-channel features and APIs.
+> **Breaking change:** nanobot no longer discovers the `nanobot.channels` Python entry-point group. Move an entry-point implementation into `nanobot/channels/<channel>/` with a package-owned manifest, runtime, tests, and optional WebUI contribution.
 
 ## How It Works
 
-nanobot discovers dependency-free `ChannelPlugin` descriptors from two sources when `nanobot gateway` starts:
-
-1. Built-in channels in `nanobot/channels/`
-2. External packages registered under the `nanobot.channels` entry point group
+When `nanobot gateway` starts, nanobot scans the packages under `nanobot/channels/` and loads each dependency-free `ChannelPlugin` descriptor from `manifest.py`.
 
 If a matching config section has `"enabled": true`, the channel is instantiated and started.
-
-## Choose the Right Extension Path
-
-| Goal | Extension path | Primary contract |
-|------|----------------|------------------|
-| Ship a separately installed Python package | External plugin registered under `nanobot.channels` | Dependency-free `ChannelPlugin` manifest and lazy `BaseChannel` runtime |
-| Add a channel to the nanobot repository and release bundle | Built-in package at `nanobot/channels/<channel>/` | The same `ChannelPlugin` manifest contract, package-local tests, and optional package-local WebUI |
-
-Both extension paths expose generic settings through `ChannelPlugin.setup`. Custom TSX and locale JSON are compiled into nanobot's WebUI at build time, so a separately installed Python wheel cannot inject a new custom WebUI into an already-built frontend bundle.
 
 ## Ownership and Sources of Truth
 
@@ -32,36 +20,36 @@ Both extension paths expose generic settings through `ChannelPlugin.setup`. Cust
 | Interactive setup connections and their short-lived state | `ChannelPlugin.connector` backed by package-local `connect.py` |
 | Reusable local login-state detection | `ChannelPlugin.management.local_state_present` backed by package-local code |
 | Discovery metadata and lazy runtime target | `PLUGIN` in `manifest.py` |
-| Built-in WebUI structure, components, URLs, field keys, actions, and preset values | `webui/index.ts` or `webui/index.tsx` |
+| WebUI structure, components, URLs, field keys, actions, and preset values | `webui/index.ts` or `webui/index.tsx` |
 | Channel-specific user-facing copy | `webui/locales/<locale>.json` |
 | Generic settings-shell copy shared by every channel | `webui/src/i18n/locales/<locale>/common.json` |
 
 Keep one source of truth for each concern. In particular, the backend setup contract decides what may be written, the TypeScript contribution decides how those fields are presented, and locale JSON supplies the channel-specific words shown to users.
 
-## External Plugin Quick Start
+## Quick Start
 
 We'll build a minimal webhook channel that receives messages via HTTP POST and sends replies back.
 
 ### Project Structure
 
 ```text
-nanobot-channel-webhook/
-├── nanobot_channel_webhook/
-│   ├── __init__.py          # lightweight package marker; do not import the runtime
-│   ├── manifest.py           # dependency-free ChannelPlugin descriptor
-│   └── channel.py            # channel implementation and optional SDK imports
-└── pyproject.toml
+nanobot/channels/webhook/
+├── __init__.py          # lightweight package marker; do not import the runtime
+├── manifest.py          # dependency-free ChannelPlugin descriptor
+├── runtime.py           # channel implementation and optional SDK imports
+├── tests/               # package-local tests
+└── webui/               # optional settings UI and translations
 ```
 
 ### 1. Create Your Channel
 
 ```python
-# nanobot_channel_webhook/__init__.py
-"""Webhook channel plugin package."""
+# nanobot/channels/webhook/__init__.py
+"""Webhook channel package."""
 ```
 
 ```python
-# nanobot_channel_webhook/manifest.py
+# nanobot/channels/webhook/manifest.py
 from nanobot.channels.contracts import ChannelFieldSpec, ChannelSetupSpec
 from nanobot.channels.plugin import ChannelPlugin
 
@@ -69,7 +57,7 @@ from nanobot.channels.plugin import ChannelPlugin
 PLUGIN = ChannelPlugin(
     name="webhook",
     display_name="Webhook",
-    runtime=f"{__package__}.channel:WebhookChannel",
+    runtime=f"{__package__}.runtime:WebhookChannel",
     setup=ChannelSetupSpec(
         fields={
             "port": ChannelFieldSpec(kind="int", default=9000),
@@ -80,7 +68,7 @@ PLUGIN = ChannelPlugin(
 ```
 
 ```python
-# nanobot_channel_webhook/channel.py
+# nanobot/channels/webhook/runtime.py
 import asyncio
 from typing import Any
 
@@ -172,34 +160,15 @@ class WebhookChannel(BaseChannel):
         return web.json_response({"ok": True})
 ```
 
-### 2. Register the Entry Point
+The package directory, `PLUGIN.name`, runtime class name, and config section must all use `webhook`. Channel names use a portable ASCII package identifier: they start with a letter and contain only letters, digits, or underscores.
 
-```toml
-# pyproject.toml
-[project]
-name = "nanobot-channel-webhook"
-version = "0.1.0"
-dependencies = ["nanobot-ai", "aiohttp"]
+If the runtime needs an optional dependency, add an extra to nanobot's `pyproject.toml` and set `ChannelPlugin.optional_extra` to that extra's name. Keep the manifest and anything it imports free of the optional SDK.
 
-[project.entry-points."nanobot.channels"]
-webhook = "nanobot_channel_webhook.manifest:PLUGIN"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["nanobot_channel_webhook"]
-```
-
-The key (`webhook`) becomes the config section name and must equal `PLUGIN.name`. Channel names must start with a letter and may contain letters, digits, underscores, or hyphens. The value must resolve to a `ChannelPlugin`; registering a `BaseChannel` class directly is not supported.
-
-### 3. Install & Configure
+### 2. Configure
 
 ```bash
-python -m pip install -e .
-nanobot plugins list      # verify the installed example plugin appears as "webhook"
-nanobot onboard           # auto-adds default config for detected plugins
+nanobot plugins list      # verify the channel package appears as "webhook"
+nanobot onboard           # add default config for detected channels
 ```
 
 Edit `~/.nanobot/config.json`:
@@ -216,9 +185,9 @@ Edit `~/.nanobot/config.json`:
 }
 ```
 
-nanobot always loads the dependency-free descriptor during discovery but imports the runtime target only when starting or enabling a channel, or when performing an explicit runtime-only action such as metadata refresh. Status, configuration, and disable operations do not need the runtime; enable uses the descriptor adapter to persist state after the runtime is available. Single-instance and multi-instance channels use the same activation rules regardless of whether their descriptor came from a built-in package or an entry point.
+nanobot always loads the dependency-free descriptor during discovery but imports the runtime target only when starting or enabling a channel, or when performing an explicit runtime-only action such as metadata refresh. Status, configuration, and disable operations do not need the runtime; enable uses the descriptor adapter to persist state after the runtime is available. Single-instance and multi-instance channels use the same activation rules.
 
-### 4. Run & Test
+### 3. Run & Test
 
 ```bash
 nanobot gateway
@@ -234,9 +203,9 @@ curl -X POST http://localhost:9000/message \
 
 The agent receives the message and processes it. Replies arrive in your `send()` method.
 
-## Built-in Channel Packages
+## Channel Package Requirements
 
-Use this section when changing the nanobot repository itself. Every built-in channel is a self-contained package at `nanobot/channels/<channel>/`; channel-specific runtime code, setup metadata, tests, WebUI structure, components, and translations stay under that directory.
+Every channel is a self-contained package at `nanobot/channels/<channel>/`; channel-specific runtime code, setup metadata, tests, WebUI structure, components, and translations stay under that directory.
 
 ### Package Layout
 
@@ -258,7 +227,7 @@ nanobot/channels/<channel>/
         └── <locale>.json       # one file for every supported WebUI locale
 ```
 
-Do not add a built-in runtime module directly under `nanobot/channels/`, create a parallel manifest tree, or add a central per-channel UI catalog. If existing channel files move, use `git mv` so history remains traceable.
+Do not add a runtime module directly under `nanobot/channels/`, create a parallel manifest tree, or add a central per-channel UI catalog. If existing channel files move, use `git mv` so history remains traceable.
 
 ### Manifest and Runtime Boundary
 
@@ -270,7 +239,7 @@ Interactive browser setup uses one small connector contract. Set `connector=f"{_
 
 Use the small constructors in [`nanobot/channels/_manifest.py`](../nanobot/channels/_manifest.py) for declarative field and requirement definitions. Use [`nanobot/channels/dingtalk/manifest.py`](../nanobot/channels/dingtalk/manifest.py) as a compact single-instance example and [`nanobot/channels/feishu/`](../nanobot/channels/feishu/) as a multi-instance example.
 
-### Built-in WebUI
+### Package-owned WebUI
 
 Set `webui="webui/index.ts"` or `webui="webui/index.tsx"` in the channel manifest. Candidate modules are bundled from channel packages, but the settings UI activates only the exact path returned by the backend feature payload.
 
@@ -318,7 +287,7 @@ Create `webui/locales/<locale>.json` for every locale code declared in [`webui/s
 
 Field messages are keyed by the config path after `channels.<channel>.`, with remaining punctuation converted to underscores. For example, `channels.signal.dm.allowFrom` maps to `setup.fields.dm_allowFrom`. Action and preset messages use the IDs declared in the TypeScript contribution.
 
-Custom channel components should read dynamic copy with `channelTranslator(t, "<channel>")`; keep the English fallback adjacent to the call so an incomplete third-party translation still renders useful text. Aliases reuse the owning channel's locale namespace rather than duplicating translations.
+Custom channel components should read dynamic copy with `channelTranslator(t, "<channel>")`; keep the English fallback adjacent to the call so an incomplete translation still renders useful text. Aliases reuse the owning channel's locale namespace rather than duplicating translations.
 
 The dependency direction is intentional:
 
@@ -333,7 +302,7 @@ This separation prevents i18n initialization from eagerly loading every channel 
 
 Put channel-specific Python tests in `nanobot/channels/<channel>/tests/`. Keep only shared registry, manager, base-class, and cross-channel contract tests in `tests/channels/`. Release builds exclude package-local tests while the repository test configuration discovers both trees.
 
-For a focused built-in channel change, run the smallest relevant set:
+For a focused channel change, run the smallest relevant set:
 
 ```bash
 uv run pytest nanobot/channels/<channel>/tests -q
@@ -489,11 +458,11 @@ Multi-instance adapters return `ChannelInstanceSpec` objects and preserve their 
 
 `ChannelInstanceSpec` contains only `instance_id` and the instance config; nanobot derives its runtime name through the adapter. Single-instance plugins keep ownership of their entire config, including a field named `instances`. Only plugins whose management spec sets `multi_instance=True` opt into instance expansion.
 
-The entry-point/config section name owns every runtime produced from that section. Class inheritance does not transfer runtime ownership to another entry point.
+The package/config section name owns every runtime produced from that section. Class inheritance does not transfer runtime ownership to another package.
 
 Return a concrete iterable or generator from the adapter's `instance_specs()`; nanobot materializes and validates it before constructing any runtime. Raise an exception for malformed persisted data rather than silently changing instance identity. Keep network-backed metadata refresh behind the runtime's `refresh_feature_metadata()` so feature GET requests remain dependency-free and read-only.
 
-For repository-owned package layout, WebUI ownership, and localization rules, see [Built-in Channel Packages](#built-in-channel-packages).
+For package layout, WebUI ownership, and localization rules, see [Channel Package Requirements](#channel-package-requirements).
 
 ### Optional (streaming)
 
@@ -735,7 +704,7 @@ Recommended rendering:
 
 `BaseChannel.is_allowed()` reads the permission list via `getattr(self.config, "allow_from", [])`. This works for Pydantic models where `allow_from` is a real Python attribute, but **fails silently for plain `dict`** — `dict` has no `allow_from` attribute, so `getattr` always returns the default `[]`, causing all messages to be denied.
 
-Built-in channels use Pydantic config models (subclassing `Base` from `nanobot.config.schema`). Plugin channels **must do the same**.
+Channel runtimes use Pydantic config models by subclassing `Base` from `nanobot.config.schema`.
 
 ### Pattern
 
@@ -794,18 +763,18 @@ String and secret fields default to `""`, list fields to `[]`, and boolean field
 
 | What | Format | Example |
 |------|--------|---------|
-| PyPI package | `nanobot-channel-{name}` | `nanobot-channel-webhook` |
-| Entry point key | `{name}` | `webhook` |
+| Package directory | `nanobot/channels/{name}` | `nanobot/channels/webhook` |
+| Manifest name | `{name}` | `webhook` |
 | Config section | `channels.{name}` | `channels.webhook` |
-| Python package | `nanobot_channel_{name}` | `nanobot_channel_webhook` |
+| Runtime import | `nanobot.channels.{name}.runtime` | `nanobot.channels.webhook.runtime` |
 
 ## Local Development
 
 ```bash
-git clone https://github.com/you/nanobot-channel-webhook
-cd nanobot-channel-webhook
+git clone https://github.com/HKUDS/nanobot.git
+cd nanobot
 python -m pip install -e .
-nanobot plugins list    # should show the installed example plugin as "webhook"
+nanobot plugins list    # should show the package as "webhook"
 nanobot gateway         # test end-to-end
 ```
 

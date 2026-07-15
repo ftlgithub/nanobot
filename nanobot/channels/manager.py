@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import inspect
 from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
@@ -679,84 +678,43 @@ class ChannelManager:
                 break
 
     @staticmethod
-    def _accepts_keyword(callable_obj: Callable[..., Any], name: str) -> bool:
-        try:
-            signature = inspect.signature(callable_obj)
-        except (TypeError, ValueError):
-            return True
-        return any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD or parameter.name == name
-            for parameter in signature.parameters.values()
-        )
-
-    @classmethod
-    async def _send_reasoning_delta(cls, channel: BaseChannel, msg: OutboundMessage, event: ProgressEvent) -> None:
-        metadata = msg.metadata
-        kwargs: dict[str, Any] = {}
-        if cls._accepts_keyword(channel.send_reasoning_delta, "stream_id"):
-            kwargs["stream_id"] = event.stream_id
-        else:
-            metadata = dict(metadata or {})
-            metadata["_reasoning_delta"] = True
-            if event.stream_id is not None:
-                metadata["_stream_id"] = event.stream_id
+    async def _send_reasoning_delta(
+        channel: BaseChannel,
+        msg: OutboundMessage,
+        event: ProgressEvent,
+    ) -> None:
         await channel.send_reasoning_delta(
             msg.chat_id,
             msg.content,
-            metadata,
-            **kwargs,
+            msg.metadata,
+            stream_id=event.stream_id,
         )
 
-    @classmethod
-    async def _send_reasoning_end(cls, channel: BaseChannel, msg: OutboundMessage, event: ProgressEvent) -> None:
-        metadata = msg.metadata
-        kwargs: dict[str, Any] = {}
-        if cls._accepts_keyword(channel.send_reasoning_end, "stream_id"):
-            kwargs["stream_id"] = event.stream_id
-        else:
-            metadata = dict(metadata or {})
-            metadata["_reasoning_end"] = True
-            if event.stream_id is not None:
-                metadata["_stream_id"] = event.stream_id
+    @staticmethod
+    async def _send_reasoning_end(
+        channel: BaseChannel,
+        msg: OutboundMessage,
+        event: ProgressEvent,
+    ) -> None:
         await channel.send_reasoning_end(
             msg.chat_id,
-            metadata,
-            **kwargs,
+            msg.metadata,
+            stream_id=event.stream_id,
         )
 
-    @classmethod
+    @staticmethod
     async def _send_stream_event(
-        cls,
         channel: BaseChannel,
         msg: OutboundMessage,
         event: StreamDeltaEvent | StreamEndEvent,
     ) -> None:
-        metadata = msg.metadata
-        kwargs: dict[str, Any] = {}
-        if cls._accepts_keyword(channel.send_delta, "stream_id"):
-            kwargs["stream_id"] = event.stream_id
-        else:
-            metadata = dict(metadata or {})
-            if event.stream_id is not None:
-                metadata["_stream_id"] = event.stream_id
-
-        if isinstance(event, StreamEndEvent):
-            if cls._accepts_keyword(channel.send_delta, "stream_end"):
-                kwargs["stream_end"] = True
-            else:
-                metadata = dict(metadata or {})
-                metadata["_stream_end"] = True
-            if cls._accepts_keyword(channel.send_delta, "resuming"):
-                kwargs["resuming"] = event.resuming
-        elif not kwargs:
-            metadata = dict(metadata or {})
-            metadata["_stream_delta"] = True
-
         await channel.send_delta(
             msg.chat_id,
             msg.content,
-            metadata,
-            **kwargs,
+            msg.metadata,
+            stream_id=event.stream_id,
+            stream_end=isinstance(event, StreamEndEvent),
+            resuming=event.resuming if isinstance(event, StreamEndEvent) else False,
         )
 
     @staticmethod

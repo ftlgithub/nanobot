@@ -1,4 +1,4 @@
-"""Shared contract tests for built-in and plugin channel extension points."""
+"""Shared contract tests for self-contained channel packages."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from nanobot.channels.contracts import (
     resolve_channel_action_target,
 )
 from nanobot.channels.plugin import ChannelPlugin
-from nanobot.channels.registry import discover_builtin_plugins, load_channel_plugin
+from nanobot.channels.registry import discover_plugins, load_channel_plugin
 
 
 class _SingleChannel(BaseChannel):
@@ -130,8 +130,8 @@ def test_channel_action_target_contract(
 
 
 def test_contract_module_is_not_discovered_as_a_channel() -> None:
-    assert "contracts" not in discover_builtin_plugins()
-    assert "manifests" not in discover_builtin_plugins()
+    assert "contracts" not in discover_plugins()
+    assert "manifests" not in discover_plugins()
 
 
 def test_settings_contract_import_does_not_eagerly_load_runtime_graph() -> None:
@@ -292,7 +292,7 @@ def test_channel_feature_instances_use_generic_setup_snapshot() -> None:
         required=(SetupRequirement.field("token"),),
     )
     plugin = ChannelPlugin(
-        name="feature-multi",
+        name="feature_multi",
         display_name="Feature multi",
         runtime=f"{__name__}:_SingleChannel",
         setup=setup_spec,
@@ -311,7 +311,7 @@ def test_channel_feature_instances_use_generic_setup_snapshot() -> None:
                 "id": "product",
                 "display_name": "Catalog product helper",
                 "enabled": False,
-                "config_values": {"channels.feature-multi.token": "leaked"},
+                "config_values": {"channels.feature_multi.token": "leaked"},
             }],
         ),
     )
@@ -345,13 +345,13 @@ def test_channel_feature_instances_use_generic_setup_snapshot() -> None:
             "enabled": True,
             "configured": True,
             "config_values": {
-                "channels.feature-multi.region": "eu",
-                "channels.feature-multi.topicIsolation": "false",
+                "channels.feature_multi.region": "eu",
+                "channels.feature_multi.topicIsolation": "false",
             },
             "configured_fields": [
-                "channels.feature-multi.token",
-                "channels.feature-multi.region",
-                "channels.feature-multi.topicIsolation",
+                "channels.feature_multi.token",
+                "channels.feature_multi.region",
+                "channels.feature_multi.topicIsolation",
             ],
         }
     ]

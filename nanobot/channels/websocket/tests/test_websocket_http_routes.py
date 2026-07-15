@@ -172,7 +172,7 @@ def _stub_matrix_feature(
     install_calls: list[str] | None = None,
     channels: list[str] | None = None,
 ) -> None:
-    from nanobot.channels.plugin import ChannelPlugin, load_builtin_channel_plugin
+    from nanobot.channels.plugin import ChannelPlugin, load_channel_package
 
     monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
     requested = channels or ["matrix"]
@@ -184,7 +184,7 @@ def _stub_matrix_feature(
     )
     plugins = {"matrix": matrix}
     if "websocket" in requested:
-        websocket = load_builtin_channel_plugin("websocket")
+        websocket = load_channel_package("websocket")
         assert websocket is not None
         plugins["websocket"] = websocket
     monkeypatch.setattr(

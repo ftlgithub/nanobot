@@ -1,4 +1,4 @@
-"""Typed metadata for self-contained built-in channel packages."""
+"""Typed metadata for self-contained channel packages."""
 
 from __future__ import annotations
 
@@ -14,10 +14,12 @@ from nanobot.channels.contracts import ChannelManagementSpec, ChannelSetupSpec
 if TYPE_CHECKING:
     from nanobot.channels.base import BaseChannel
 
+_CHANNEL_PACKAGE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+
 
 @dataclass(frozen=True)
 class ChannelPlugin:
-    """Dependency-free manifest for one built-in channel package.
+    """Dependency-free manifest for one channel package.
 
     ``runtime`` is an absolute ``module:attribute`` target. Keeping it as an
     import string lets discovery inspect metadata without importing optional
@@ -37,10 +39,10 @@ class ChannelPlugin:
     webui: str | None = None
 
     def __post_init__(self) -> None:
-        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", self.name):
+        if _CHANNEL_PACKAGE_NAME.fullmatch(self.name) is None:
             raise ValueError(
                 "channel plugin name must start with a letter and contain only letters, "
-                "digits, underscores, or hyphens"
+                "digits, or underscores"
             )
         _target_parts(self.runtime, label="runtime")
         if self.connector is not None:
@@ -108,17 +110,17 @@ def _target_parts(target: str, *, label: str) -> tuple[str, str]:
     return module_name, attr_name
 
 
-def has_builtin_channel_package(name: str) -> bool:
+def has_channel_package(name: str) -> bool:
     """Return whether *name* owns a dependency-free package manifest."""
-    if not name.isidentifier() or name.startswith("_"):
+    if _CHANNEL_PACKAGE_NAME.fullmatch(name) is None:
         return False
     return files("nanobot.channels").joinpath(name, "manifest.py").is_file()
 
 
 @lru_cache(maxsize=None)
-def load_builtin_channel_plugin(name: str) -> ChannelPlugin | None:
-    """Load one built-in package manifest without importing its runtime."""
-    if not has_builtin_channel_package(name):
+def load_channel_package(name: str) -> ChannelPlugin | None:
+    """Load one package manifest without importing its runtime."""
+    if not has_channel_package(name):
         return None
 
     module_name = f"nanobot.channels.{name}.manifest"
@@ -165,6 +167,6 @@ def load_builtin_channel_plugin(name: str) -> ChannelPlugin | None:
 
 __all__ = [
     "ChannelPlugin",
-    "has_builtin_channel_package",
-    "load_builtin_channel_plugin",
+    "has_channel_package",
+    "load_channel_package",
 ]

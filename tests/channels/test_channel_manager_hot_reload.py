@@ -43,7 +43,7 @@ class _MultiHotChannel(_HotChannel):
     display_name = "Multi"
 
 class _AliasHotChannel(_HotChannel):
-    """Plugin entry-point alias that claims another channel's runtime namespace."""
+    """Package descriptor alias that claims another channel's runtime namespace."""
 
     name = "hot"
     display_name = "Alias"

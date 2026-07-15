@@ -1,4 +1,4 @@
-"""Small constructors shared by declarative built-in channel manifests."""
+"""Small constructors shared by declarative channel manifests."""
 
 from __future__ import annotations
 

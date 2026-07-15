@@ -9,99 +9,43 @@ from loguru import logger
 
 from nanobot.channels.plugin import (
     ChannelPlugin,
-    has_builtin_channel_package,
-    load_builtin_channel_plugin,
+    has_channel_package,
+    load_channel_package,
 )
 
 if TYPE_CHECKING:
     from nanobot.channels.base import BaseChannel
 
 
-def _builtin_package_names() -> list[str]:
+def _channel_package_names() -> list[str]:
     import nanobot.channels as package
 
     return [
         name
         for _, name, is_package in pkgutil.iter_modules(package.__path__)
-        if is_package and has_builtin_channel_package(name)
+        if is_package and has_channel_package(name)
     ]
 
 
-def discover_builtin_plugins(
+def discover_plugins(
     enabled_names: set[str] | None = None,
-    *,
-    _names: list[str] | None = None,
 ) -> dict[str, ChannelPlugin]:
-    """Load dependency-free descriptors from built-in channel packages."""
+    """Load dependency-free descriptors from self-contained channel packages."""
     plugins: dict[str, ChannelPlugin] = {}
-    for name in _names if _names is not None else _builtin_package_names():
+    for name in _channel_package_names():
         if enabled_names is not None and name not in enabled_names:
             continue
         try:
-            plugin = load_builtin_channel_plugin(name)
+            plugin = load_channel_package(name)
             if plugin is not None:
                 plugins[name] = plugin
         except Exception as exc:
-            logger.warning("Failed to load built-in channel descriptor '{}': {}", name, exc)
-    return plugins
-
-
-def discover_entrypoint_plugins(
-    enabled_names: set[str] | None = None,
-    *,
-    _reserved_names: set[str] | None = None,
-) -> dict[str, ChannelPlugin]:
-    """Load external ``ChannelPlugin`` descriptors registered via entry points."""
-    from importlib.metadata import entry_points
-
-    reserved_names = _reserved_names or set()
-    plugins: dict[str, ChannelPlugin] = {}
-    for entry_point in entry_points(group="nanobot.channels"):
-        if enabled_names is not None and entry_point.name not in enabled_names:
-            continue
-        if entry_point.name in reserved_names:
-            logger.warning(
-                "External channel descriptor '{}' is shadowed by a built-in channel",
-                entry_point.name,
-            )
-            continue
-        try:
-            plugin = entry_point.load()
-            if not isinstance(plugin, ChannelPlugin):
-                raise TypeError(
-                    "entry point must resolve to nanobot.channels.plugin.ChannelPlugin"
-                )
-            if plugin.name != entry_point.name:
-                raise TypeError(
-                    f"descriptor name '{plugin.name}' does not match entry point "
-                    f"name '{entry_point.name}'"
-                )
-            plugins[entry_point.name] = plugin
-        except Exception as exc:
-            logger.warning(
-                "Failed to load channel descriptor '{}': {}",
-                entry_point.name,
-                exc,
-            )
-    return plugins
-
-
-def discover_plugins(enabled_names: set[str] | None = None) -> dict[str, ChannelPlugin]:
-    """Return built-in and entry-point descriptors through one contract."""
-    names = _builtin_package_names()
-    builtin_names = set(names)
-    plugins = discover_builtin_plugins(enabled_names, _names=names)
-    plugins.update(
-        discover_entrypoint_plugins(
-            enabled_names,
-            _reserved_names=builtin_names,
-        )
-    )
+            logger.warning("Failed to load channel package descriptor '{}': {}", name, exc)
     return plugins
 
 
 def load_channel_plugin(name: str) -> ChannelPlugin:
-    """Load one built-in or entry-point descriptor."""
+    """Load one channel package descriptor."""
     plugin = discover_plugins({name}).get(name)
     if plugin is None:
         raise ImportError(f"Unknown channel: {name}")
@@ -153,9 +97,7 @@ def discover_all() -> dict[str, type[BaseChannel]]:
 __all__ = [
     "channel_default_enabled",
     "discover_all",
-    "discover_builtin_plugins",
     "discover_enabled",
-    "discover_entrypoint_plugins",
     "discover_plugins",
     "load_channel_class",
     "load_channel_plugin",

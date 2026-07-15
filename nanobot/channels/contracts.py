@@ -62,8 +62,8 @@ class ChannelActivation:
     """Normalized enablement state used before a channel runtime is imported.
 
     Channel configuration may be a Pydantic model or persisted JSON, and a
-    built-in channel may expose independently enabled instances. Instance
-    envelopes are opt-in so an existing plugin can keep using an ``instances``
+    channel may expose independently enabled instances. Instance envelopes are
+    opt-in so a channel can keep using an ``instances``
     field as ordinary channel-owned configuration.
     """
 

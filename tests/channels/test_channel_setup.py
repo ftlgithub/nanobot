@@ -10,8 +10,8 @@ import pytest
 import nanobot.channels._setup as channel_setup_module
 import nanobot.channels.registry as registry_module
 from nanobot.channels._setup import channel_setup_spec
-from nanobot.channels.plugin import ChannelPlugin, load_builtin_channel_plugin
-from nanobot.channels.registry import channel_default_enabled, discover_builtin_plugins
+from nanobot.channels.plugin import ChannelPlugin, load_channel_package
+from nanobot.channels.registry import channel_default_enabled, discover_plugins
 
 EXPECTED_CHANNELS = {
     "dingtalk",
@@ -94,13 +94,13 @@ def test_webui_forms_have_writable_mattermost_and_whatsapp_contracts() -> None:
     )
 
 
-def test_every_builtin_channel_is_a_self_contained_package() -> None:
+def test_every_channel_is_a_self_contained_package() -> None:
     channel_dir = Path(channel_setup_module.__file__).parent
     package_names = {path.parent.name for path in channel_dir.glob("*/manifest.py")}
 
     assert not hasattr(channel_setup_module, "CHANNEL_SETUP_SPECS")
     assert package_names == EXPECTED_CHANNELS
-    assert set(discover_builtin_plugins()) == EXPECTED_CHANNELS
+    assert set(discover_plugins()) == EXPECTED_CHANNELS
     for name in EXPECTED_CHANNELS:
         package_dir = channel_dir / name
         assert (package_dir / "__init__.py").is_file()
@@ -108,7 +108,7 @@ def test_every_builtin_channel_is_a_self_contained_package() -> None:
         assert (package_dir / "runtime.py").is_file()
         assert not (channel_dir / f"{name}.py").exists()
 
-        plugin = load_builtin_channel_plugin(name)
+        plugin = load_channel_package(name)
         assert plugin is not None
         assert plugin.name == name
         assert plugin.runtime.startswith(f"nanobot.channels.{name}.runtime:")
@@ -120,7 +120,7 @@ def test_every_builtin_channel_is_a_self_contained_package() -> None:
 def test_channel_locales_cover_authoritative_setup_contracts() -> None:
     channel_dir = Path(channel_setup_module.__file__).parent
     for name in EXPECTED_CHANNELS:
-        plugin = load_builtin_channel_plugin(name)
+        plugin = load_channel_package(name)
         assert plugin is not None
         if plugin.webui is None or plugin.setup is None:
             continue
@@ -138,7 +138,7 @@ def test_channel_locales_cover_authoritative_setup_contracts() -> None:
             assert setup_messages.get("officialLabel"), f"{name} has no localized official label"
 
 
-def test_builtin_setup_manifests_only_import_contract_modules() -> None:
+def test_channel_manifests_only_import_contract_modules() -> None:
     channel_dir = Path(channel_setup_module.__file__).parent
     allowed_imports = {
         "nanobot.channels._manifest",
@@ -187,7 +187,7 @@ def test_runtime_classes_do_not_declare_persisted_management_hooks() -> None:
 
 
 def test_feishu_package_manifest_owns_runtime_and_webui_metadata() -> None:
-    plugin = load_builtin_channel_plugin("feishu")
+    plugin = load_channel_package("feishu")
 
     assert plugin is not None
     assert plugin.runtime == "nanobot.channels.feishu.runtime:FeishuChannel"
@@ -198,7 +198,7 @@ def test_feishu_package_manifest_owns_runtime_and_webui_metadata() -> None:
 
 
 def test_weixin_package_manifest_owns_runtime_and_webui_metadata() -> None:
-    plugin = load_builtin_channel_plugin("weixin")
+    plugin = load_channel_package("weixin")
 
     assert plugin is not None
     assert plugin.runtime == "nanobot.channels.weixin.runtime:WeixinChannel"
@@ -210,10 +210,10 @@ def test_weixin_package_manifest_owns_runtime_and_webui_metadata() -> None:
 def test_package_manifests_do_not_import_runtimes() -> None:
     code = f"""
 import sys
-from nanobot.channels.plugin import load_builtin_channel_plugin
+from nanobot.channels.plugin import load_channel_package
 
 for name in {sorted(EXPECTED_CHANNELS)!r}:
-    plugin = load_builtin_channel_plugin(name)
+    plugin = load_channel_package(name)
     assert plugin is not None
     assert f"nanobot.channels.{{name}}.runtime" not in sys.modules
 """
@@ -238,14 +238,13 @@ def test_channel_plugin_normalizes_webui_entry() -> None:
     assert plugin.webui == "webui/index.tsx"
 
 
-def test_external_channel_plugin_name_allows_entry_point_hyphens() -> None:
-    plugin = ChannelPlugin(
-        name="google-chat",
-        display_name="Google Chat",
-        runtime="example.google_chat.runtime:GoogleChatChannel",
-    )
-
-    assert plugin.name == "google-chat"
+def test_channel_plugin_name_must_match_package_identifier() -> None:
+    with pytest.raises(ValueError, match="letters, digits, or underscores"):
+        ChannelPlugin(
+            name="google-chat",
+            display_name="Google Chat",
+            runtime="example.google_chat.runtime:GoogleChatChannel",
+        )
 
 
 def test_channel_plugin_rejects_invalid_runtime_import_path() -> None:
@@ -278,7 +277,7 @@ def test_websocket_manifest_declares_the_only_default_enabled_channel() -> None:
     enabled = {
         name
         for name in EXPECTED_CHANNELS
-        if (plugin := load_builtin_channel_plugin(name)) is not None and plugin.default_enabled
+        if (plugin := load_channel_package(name)) is not None and plugin.default_enabled
     }
 
     assert enabled == {"websocket"}

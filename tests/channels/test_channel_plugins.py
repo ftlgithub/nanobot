@@ -1,4 +1,4 @@
-"""Tests for channel plugin discovery, merging, and config compatibility."""
+"""Tests for channel package discovery, management, and config behavior."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ import pytest
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.outbound_events import (
-    ProgressEvent,
     StreamDeltaEvent,
     StreamedResponseEvent,
     StreamEndEvent,
@@ -34,7 +33,7 @@ from nanobot.channels.contracts import (
     channel_default_config,
 )
 from nanobot.channels.manager import ChannelManager
-from nanobot.channels.plugin import ChannelPlugin, load_builtin_channel_plugin
+from nanobot.channels.plugin import ChannelPlugin, load_channel_package
 from nanobot.config.loader import load_config, save_config
 from nanobot.config.schema import ChannelsConfig, Config
 from nanobot.providers.transcription import GroqTranscriptionProvider as _GroqProvider
@@ -82,21 +81,6 @@ class _SetupPlugin(_FakePlugin):
                 "status": "pass" if token.startswith("plugin-") else "fail",
             }],
         }
-
-
-class _FakeTelegram(BaseChannel):
-    """Plugin that tries to shadow built-in telegram."""
-    name = "telegram"
-    display_name = "Fake Telegram"
-
-    async def start(self) -> None:
-        pass
-
-    async def stop(self) -> None:
-        pass
-
-    async def send(self, msg: OutboundMessage) -> None:
-        pass
 
 
 class _FakeLine(_FakePlugin):
@@ -206,19 +190,6 @@ _SETUP_PLUGIN_SPEC = ChannelSetupSpec(
 )
 
 
-def _make_entry_point(
-    name: str,
-    channel_cls: type[BaseChannel],
-    *,
-    setup: ChannelSetupSpec | None = None,
-):
-    """Create a mock entry point that returns a channel descriptor."""
-    plugin = _channel_plugin(channel_cls, setup=setup)
-    assert plugin.name == name
-    ep = SimpleNamespace(name=name, load=lambda: plugin)
-    return ep
-
-
 def _stub_channel_registry(
     monkeypatch: pytest.MonkeyPatch,
     *plugins: ChannelPlugin,
@@ -233,13 +204,13 @@ def _stub_channel_registry(
     monkeypatch.setattr("nanobot.channels.registry.discover_plugins", discover)
 
 
-def _stub_builtin_channel_registry(
+def _stub_channel_packages(
     monkeypatch: pytest.MonkeyPatch,
     *names: str,
 ) -> None:
-    from nanobot.channels.plugin import load_builtin_channel_plugin
+    from nanobot.channels.plugin import load_channel_package
 
-    plugins = [load_builtin_channel_plugin(name) for name in names]
+    plugins = [load_channel_package(name) for name in names]
     assert all(plugin is not None for plugin in plugins)
     _stub_channel_registry(monkeypatch, *(plugin for plugin in plugins if plugin is not None))
 
@@ -288,7 +259,7 @@ def test_channels_config_getattr_returns_extra():
     assert section["enabled"] is True
 
 
-def test_channels_config_builtin_fields_removed():
+def test_channels_config_has_no_per_channel_fields():
     """After decoupling, ChannelsConfig has no explicit channel fields."""
     cfg = ChannelsConfig()
     assert not hasattr(cfg, "telegram")
@@ -308,7 +279,7 @@ def test_channels_config_extract_document_text_accepts_camel_alias():
     ["websocket", "telegram", "discord", "slack", "email", "feishu", "matrix", "weixin", "whatsapp"],
 )
 def test_special_setup_validation_is_owned_by_channel_package(name: str):
-    plugin = load_builtin_channel_plugin(name)
+    plugin = load_channel_package(name)
 
     assert plugin is not None
     assert plugin.setup is not None
@@ -318,7 +289,7 @@ def test_special_setup_validation_is_owned_by_channel_package(name: str):
 
 @pytest.mark.parametrize("name", ["feishu", "weixin"])
 def test_interactive_connector_is_owned_by_channel_package(name: str):
-    plugin = load_builtin_channel_plugin(name)
+    plugin = load_channel_package(name)
 
     assert plugin is not None
     assert plugin.connector is not None
@@ -327,8 +298,8 @@ def test_interactive_connector_is_owned_by_channel_package(name: str):
 
 
 def test_descriptor_defaults_cover_onboarding_fields_without_runtime_import():
-    qq = load_builtin_channel_plugin("qq")
-    email = load_builtin_channel_plugin("email")
+    qq = load_channel_package("qq")
+    email = load_channel_package("email")
 
     assert qq is not None
     assert email is not None
@@ -379,10 +350,6 @@ def test_channel_manager_loads_descriptor_but_not_disabled_runtime(monkeypatch):
         display_name="Fake Plugin",
         runtime="missing.fakeplugin.runtime:FakePlugin",
     )
-    entry_point = SimpleNamespace(
-        name="fakeplugin",
-        load=lambda: load_calls.append("descriptor") or plugin,
-    )
     config = Config.model_validate({
         "channels": {
             "fakeplugin": {
@@ -392,8 +359,14 @@ def test_channel_manager_loads_descriptor_but_not_disabled_runtime(monkeypatch):
         }
     })
 
-    monkeypatch.setattr("nanobot.channels.registry._builtin_package_names", lambda: [])
-    monkeypatch.setattr(_EP_TARGET, lambda **_kwargs: [entry_point])
+    monkeypatch.setattr(
+        "nanobot.channels.registry._channel_package_names",
+        lambda: ["fakeplugin"],
+    )
+    monkeypatch.setattr(
+        "nanobot.channels.registry.load_channel_package",
+        lambda _name: load_calls.append("descriptor") or plugin,
+    )
 
     manager = ChannelManager(config, MessageBus())
 
@@ -477,7 +450,7 @@ def test_multi_plugin_action_defaults_to_default_instance(
     assert explicit["features"][0]["enabled"] is True
 
 
-async def test_external_single_plugin_enable_applies_defaults_before_hot_reload(
+async def test_single_channel_enable_applies_defaults_before_hot_reload(
     monkeypatch,
     tmp_path,
 ):
@@ -548,19 +521,16 @@ def test_channel_manager_preserves_single_instance_plugin_owned_instances(monkey
 
 
 # ---------------------------------------------------------------------------
-# discover_plugins
+# Channel package discovery
 # ---------------------------------------------------------------------------
 
-_EP_TARGET = "importlib.metadata.entry_points"
-
-
-def test_discover_plugins_loads_entry_points():
+def test_discover_plugins_loads_package_descriptors():
     from nanobot.channels.registry import discover_plugins
 
-    ep = _make_entry_point("line", _FakeLine)
+    plugin = _channel_plugin(_FakeLine)
     with (
-        patch("nanobot.channels.registry._builtin_package_names", return_value=[]),
-        patch(_EP_TARGET, return_value=[ep]),
+        patch("nanobot.channels.registry._channel_package_names", return_value=["line"]),
+        patch("nanobot.channels.registry.load_channel_package", return_value=plugin),
     ):
         result = discover_plugins()
 
@@ -796,14 +766,13 @@ def test_discover_plugins_skips_names_outside_enabled_set():
 
     loaded: list[str] = []
 
-    def _load_disabled():
+    def _load_disabled(_name: str):
         loaded.append("disabled")
         return _channel_plugin(_FakePlugin)
 
-    ep = SimpleNamespace(name="disabled", load=_load_disabled)
     with (
-        patch("nanobot.channels.registry._builtin_package_names", return_value=[]),
-        patch(_EP_TARGET, return_value=[ep]),
+        patch("nanobot.channels.registry._channel_package_names", return_value=["disabled"]),
+        patch("nanobot.channels.registry.load_channel_package", side_effect=_load_disabled),
     ):
         result = discover_plugins({"enabled"})
 
@@ -814,57 +783,38 @@ def test_discover_plugins_skips_names_outside_enabled_set():
 def test_discover_plugins_handles_load_error():
     from nanobot.channels.registry import discover_plugins
 
-    def _boom():
+    def _boom(_name: str):
         raise RuntimeError("broken")
 
-    ep = SimpleNamespace(name="broken", load=_boom)
     with (
-        patch("nanobot.channels.registry._builtin_package_names", return_value=[]),
-        patch(_EP_TARGET, return_value=[ep]),
+        patch("nanobot.channels.registry._channel_package_names", return_value=["broken"]),
+        patch("nanobot.channels.registry.load_channel_package", side_effect=_boom),
     ):
         result = discover_plugins()
 
     assert "broken" not in result
 
 
-def test_discover_plugins_rejects_runtime_class_entry_point():
-    from nanobot.channels.registry import discover_plugins
-
-    entry_point = SimpleNamespace(name="fakeplugin", load=lambda: _FakePlugin)
-    with (
-        patch("nanobot.channels.registry._builtin_package_names", return_value=[]),
-        patch(_EP_TARGET, return_value=[entry_point]),
-        patch("nanobot.channels.registry.logger.warning") as warning,
-    ):
-        result = discover_plugins()
-
-    assert result == {}
-    assert "must resolve to nanobot.channels.plugin.ChannelPlugin" in str(
-        warning.call_args.args[2]
-    )
-
-
 # ---------------------------------------------------------------------------
-# discover_all — merge & priority
+# Runtime discovery
 # ---------------------------------------------------------------------------
 
-def test_discover_all_includes_builtins():
-    from nanobot.channels.registry import discover_all, discover_builtin_plugins
+def test_discover_all_includes_available_channel_packages():
+    from nanobot.channels.registry import discover_all, discover_plugins
 
-    with patch(_EP_TARGET, return_value=[]):
-        result = discover_all()
+    result = discover_all()
 
     # discover_all() only returns channels that are actually available (dependencies installed)
-    # discover_builtin_plugins() returns all built-in channel descriptors
+    # discover_plugins() returns all channel package descriptors
     # So we check that all actually loaded channels are in the result
     for name in result:
-        assert name in discover_builtin_plugins()
+        assert name in discover_plugins()
 
 
-def test_discover_builtin_plugins_excludes_internal_helpers():
-    from nanobot.channels.registry import discover_builtin_plugins
+def test_discover_plugins_excludes_internal_helpers():
+    from nanobot.channels.registry import discover_plugins
 
-    names = discover_builtin_plugins()
+    names = discover_plugins()
 
     assert "_feishu_ws" not in names
     assert "_setup" not in names
@@ -872,21 +822,7 @@ def test_discover_builtin_plugins_excludes_internal_helpers():
     assert "_feishu_instances" not in names
 
 
-def test_discover_all_includes_external_plugin():
-    from nanobot.channels.registry import discover_all
-
-    ep = _make_entry_point("line", _FakeLine)
-    with (
-        patch("nanobot.channels.registry._builtin_package_names", return_value=[]),
-        patch(_EP_TARGET, return_value=[ep]),
-    ):
-        result = discover_all()
-
-    assert "line" in result
-    assert result["line"] is _FakeLine
-
-
-def test_discover_enabled_imports_only_enabled_builtins():
+def test_discover_enabled_imports_only_enabled_packages():
     from nanobot.channels.registry import discover_enabled
 
     class _EnabledPlugin(_FakePlugin):
@@ -906,7 +842,7 @@ def test_discover_enabled_imports_only_enabled_builtins():
     assert result == {"enabled": _EnabledPlugin}
 
 
-def test_discover_enabled_warns_for_enabled_builtin_import_errors():
+def test_discover_enabled_warns_for_enabled_package_import_errors():
     from nanobot.channels.registry import discover_enabled
 
     plugin = ChannelPlugin(
@@ -928,42 +864,12 @@ def test_discover_enabled_warns_for_enabled_builtin_import_errors():
     assert "missing" in str(warning.call_args.args[2])
 
 
-def test_discover_all_builtin_shadows_plugin():
-    from nanobot.channels.registry import discover_all
-
-    ep = _make_entry_point("telegram", _FakeTelegram)
-    with patch(_EP_TARGET, return_value=[ep]):
-        result = discover_all()
-
-    assert "telegram" in result
-    assert result["telegram"] is not _FakeTelegram
-
-
-def test_discover_all_builtin_name_shadows_plugin_when_dependency_missing():
-    from nanobot.channels.registry import discover_all
-
-    ep = _make_entry_point("telegram", _FakeTelegram)
-    builtin = ChannelPlugin(
-        name="telegram",
-        display_name="Telegram",
-        runtime="missing.telegram.runtime:TelegramChannel",
-    )
-    with (
-        patch("nanobot.channels.registry._builtin_package_names", return_value=["telegram"]),
-        patch("nanobot.channels.registry.discover_builtin_plugins", return_value={"telegram": builtin}),
-        patch(_EP_TARGET, return_value=[ep]),
-    ):
-        result = discover_all()
-
-    assert "telegram" not in result
-
-
 # ---------------------------------------------------------------------------
-# Manager _init_channels with dict config (plugin scenario)
+# Manager _init_channels with dict config
 # ---------------------------------------------------------------------------
 
 def test_manager_loads_plugin_from_dict_config(monkeypatch):
-    """ChannelManager should instantiate a plugin channel from a raw dict config."""
+    """ChannelManager should instantiate a channel package from a raw dict config."""
     from nanobot.channels.manager import ChannelManager
 
     fake_config = Config.model_validate({
@@ -1293,7 +1199,7 @@ def test_plugins_list_shows_available_features(monkeypatch):
     runner = CliRunner()
     config = Config.model_validate({"channels": {"weixin": {"enabled": True}}})
     monkeypatch.setattr("nanobot.config.loader.load_config", lambda config_path=None: config)
-    _stub_builtin_channel_registry(monkeypatch, "weixin")
+    _stub_channel_packages(monkeypatch, "weixin")
     monkeypatch.setattr(
         "nanobot.optional_features.optional_dependency_groups",
         lambda: {"weixin": ["qrcode[pil]>=8.0"], "bedrock": ["boto3>=1.43.0"]},
@@ -1482,7 +1388,7 @@ def test_plugins_disable_channel_writes_config(monkeypatch, tmp_path):
         encoding="utf-8",
     )
     runner = CliRunner()
-    _stub_builtin_channel_registry(monkeypatch, "matrix")
+    _stub_channel_packages(monkeypatch, "matrix")
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
 
     result = runner.invoke(app, ["plugins", "disable", "matrix", "--config", str(config_path)])
@@ -1501,7 +1407,7 @@ def test_plugins_disable_rejects_non_channel_and_allows_websocket(monkeypatch, t
 
     config_path = tmp_path / "config.json"
     runner = CliRunner()
-    _stub_builtin_channel_registry(monkeypatch, "matrix", "websocket")
+    _stub_channel_packages(monkeypatch, "matrix", "websocket")
     monkeypatch.setattr(
         "nanobot.optional_features.optional_dependency_groups",
         lambda: {"bedrock": ["boto3>=1.43.0"]},
@@ -1641,7 +1547,7 @@ def test_disable_optional_feature_rejects_unknown_features_and_non_channels(
 
     config_path = tmp_path / "config.json"
     monkeypatch.setattr("nanobot.config.loader._current_config_path", config_path)
-    _stub_builtin_channel_registry(monkeypatch, "matrix", "websocket")
+    _stub_channel_packages(monkeypatch, "matrix", "websocket")
     monkeypatch.setattr(
         "nanobot.optional_features.optional_dependency_groups",
         lambda: {"bedrock": ["boto3>=1.43.0"]},
@@ -1669,7 +1575,7 @@ def test_disable_optional_feature_writes_channel_disabled(monkeypatch, tmp_path)
         json.dumps({"channels": {"matrix": {"enabled": True, "homeserver": "keep"}}}),
         encoding="utf-8",
     )
-    _stub_builtin_channel_registry(monkeypatch, "matrix", "websocket")
+    _stub_channel_packages(monkeypatch, "matrix", "websocket")
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
 
     payload = disable_optional_feature("matrix", config_path=config_path)
@@ -1762,7 +1668,7 @@ def test_optional_features_payload_counts_enabled_channel_with_missing_dependenc
     from nanobot.optional_features import optional_features_payload
 
     config = Config.model_validate({"channels": {"matrix": {"enabled": True}}})
-    _stub_builtin_channel_registry(monkeypatch, "matrix")
+    _stub_channel_packages(monkeypatch, "matrix")
     monkeypatch.setattr(
         "nanobot.optional_features.optional_dependency_groups",
         lambda: {"matrix": ["matrix-nio>=0.25.2"]},
@@ -1828,7 +1734,7 @@ def test_optional_features_payload_reflects_saved_channel_config(monkeypatch):
             }
         }
     })
-    _stub_builtin_channel_registry(monkeypatch, "discord")
+    _stub_channel_packages(monkeypatch, "discord")
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
 
     payload = optional_features_payload(config=config)
@@ -1853,7 +1759,7 @@ def test_optional_features_payload_marks_enabled_channel_missing_credentials(mon
     from nanobot.optional_features import optional_features_payload
 
     config = Config.model_validate({"channels": {"discord": {"enabled": True}}})
-    _stub_builtin_channel_registry(monkeypatch, "discord")
+    _stub_channel_packages(monkeypatch, "discord")
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
 
     payload = optional_features_payload(config=config)
@@ -1882,7 +1788,7 @@ def test_optional_features_payload_detects_saved_weixin_login_state(tmp_path, mo
             }
         }
     })
-    _stub_builtin_channel_registry(monkeypatch, "weixin")
+    _stub_channel_packages(monkeypatch, "weixin")
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
 
     payload = optional_features_payload(config=config)
@@ -1905,7 +1811,7 @@ def test_optional_features_payload_detects_legacy_default_weixin_state(tmp_path,
         json.dumps({"token": "legacy-weixin-token"}),
         encoding="utf-8",
     )
-    _stub_builtin_channel_registry(monkeypatch, "weixin")
+    _stub_channel_packages(monkeypatch, "weixin")
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
 
     payload = optional_features_payload(config=Config())
@@ -1933,7 +1839,7 @@ def test_optional_features_payload_requires_matrix_device_id_for_token_login(
             }
         }
     })
-    _stub_builtin_channel_registry(monkeypatch, "matrix")
+    _stub_channel_packages(monkeypatch, "matrix")
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
 
     payload = optional_features_payload(config=config)
@@ -1954,7 +1860,7 @@ def test_optional_features_payload_marks_disabled_feishu_as_configured(monkeypat
         }
     })
 
-    plugin = load_builtin_channel_plugin("feishu")
+    plugin = load_channel_package("feishu")
     assert plugin is not None
     _stub_channel_registry(
         monkeypatch,
@@ -1974,7 +1880,7 @@ def test_optional_features_payload_marks_disabled_feishu_as_configured(monkeypat
 
 
 def test_optional_features_payload_lists_feishu_instances(monkeypatch):
-    from nanobot.channels.plugin import load_builtin_channel_plugin
+    from nanobot.channels.plugin import load_channel_package
     from nanobot.optional_features import optional_features_payload
 
     config = Config.model_validate({
@@ -2001,7 +1907,7 @@ def test_optional_features_payload_lists_feishu_instances(monkeypatch):
             }
         }
     })
-    plugin = load_builtin_channel_plugin("feishu")
+    plugin = load_channel_package("feishu")
     assert plugin is not None
     _stub_channel_registry(
         monkeypatch,
@@ -2085,7 +1991,7 @@ def test_optional_features_payload_does_not_refresh_saved_feishu_identity(monkey
         config_path,
     )
     monkeypatch.setattr(loader, "_current_config_path", config_path)
-    _stub_builtin_channel_registry(monkeypatch, "feishu")
+    _stub_channel_packages(monkeypatch, "feishu")
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
     monkeypatch.setattr(
         feishu_module,
@@ -2128,7 +2034,7 @@ def test_enable_optional_feature_refreshes_feishu_identity(
         config_path,
     )
     monkeypatch.setattr(loader, "_current_config_path", config_path)
-    _stub_builtin_channel_registry(monkeypatch, "feishu")
+    _stub_channel_packages(monkeypatch, "feishu")
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
     monkeypatch.setattr(feishu_module, "FEISHU_AVAILABLE", True)
     monkeypatch.setattr(
@@ -2174,7 +2080,7 @@ def test_optional_features_payload_preserves_legacy_flat_feishu_config(monkeypat
         config_path,
     )
     monkeypatch.setattr(loader, "_current_config_path", config_path)
-    _stub_builtin_channel_registry(monkeypatch, "feishu")
+    _stub_channel_packages(monkeypatch, "feishu")
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: {})
     monkeypatch.setattr(
         feishu_module,
@@ -2405,7 +2311,7 @@ def test_requirement_installed_validates_requested_extras(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_manager_skips_disabled_plugin():
+async def test_manager_skips_disabled_channel_package(monkeypatch):
     fake_config = SimpleNamespace(
         channels=ChannelsConfig.model_validate({
             "fakeplugin": {"enabled": False},
@@ -2413,24 +2319,23 @@ async def test_manager_skips_disabled_plugin():
         providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
     )
 
-    ep = _make_entry_point("fakeplugin", _FakePlugin)
-    with patch(_EP_TARGET, return_value=[ep]):
-        mgr = ChannelManager.__new__(ChannelManager)
-        mgr.config = fake_config
-        mgr.bus = MessageBus()
-        mgr.channels = {}
-        mgr._dispatch_task = None
-        mgr._init_channels()
+    _stub_channel_registry(monkeypatch, _channel_plugin(_FakePlugin))
+    mgr = ChannelManager.__new__(ChannelManager)
+    mgr.config = fake_config
+    mgr.bus = MessageBus()
+    mgr.channels = {}
+    mgr._dispatch_task = None
+    mgr._init_channels()
 
     assert "fakeplugin" not in mgr.channels
 
 
 # ---------------------------------------------------------------------------
-# Built-in channel default_config() and dict->Pydantic conversion
+# Channel default_config() and dict-to-Pydantic conversion
 # ---------------------------------------------------------------------------
 
-def test_builtin_channel_default_config():
-    """Built-in channels expose default_config() returning a dict with 'enabled': False."""
+def test_channel_default_config():
+    """Channels expose default_config() returning a dict with 'enabled': False."""
     from nanobot.channels.dingtalk.runtime import DingTalkChannel
     cfg = DingTalkChannel.default_config()
     assert isinstance(cfg, dict)
@@ -2438,8 +2343,8 @@ def test_builtin_channel_default_config():
     assert "clientId" in cfg
 
 
-def test_builtin_channel_init_from_dict():
-    """Built-in channels accept a raw dict and convert to Pydantic internally."""
+def test_channel_init_from_dict():
+    """Channels accept a raw dict and convert to Pydantic internally."""
     from nanobot.channels.dingtalk.runtime import DingTalkChannel
     bus = MessageBus()
     ch = DingTalkChannel({"enabled": False, "clientId": "test-id", "allowFrom": ["*"]}, bus)
@@ -2620,7 +2525,7 @@ async def test_send_with_retry_no_retry_when_max_is_zero():
 @pytest.mark.asyncio
 async def test_send_with_retry_calls_send_delta():
     """_send_with_retry should call send_delta for stream delta events."""
-    send_delta_called = False
+    calls: list[tuple[str, str, str | None, bool, bool]] = []
 
     class _StreamingChannel(BaseChannel):
         name = "streaming"
@@ -2645,8 +2550,7 @@ async def test_send_with_retry_calls_send_delta():
             stream_end: bool = False,
             resuming: bool = False,
         ) -> None:
-            nonlocal send_delta_called
-            send_delta_called = True
+            calls.append((chat_id, delta, stream_id, stream_end, resuming))
 
     fake_config = SimpleNamespace(
         channels=ChannelsConfig(send_max_retries=3),
@@ -2662,138 +2566,19 @@ async def test_send_with_retry_calls_send_delta():
     msg = outbound_message_for_event(
         channel="streaming",
         chat_id="123",
-        event=StreamDeltaEvent(content="test delta"),
+        event=StreamDeltaEvent(content="test delta", stream_id="s1"),
     )
     await mgr._send_with_retry(mgr.channels["streaming"], msg)
-
-    assert send_delta_called is True
-
-
-@pytest.mark.asyncio
-async def test_send_with_retry_supports_legacy_stream_delta_signature():
-    """External plugins with the old send_delta signature should keep working."""
-    calls: list[tuple[str, str, dict]] = []
-
-    class _LegacyStreamingChannel(BaseChannel):
-        name = "legacy_streaming"
-        display_name = "Legacy Streaming"
-
-        async def start(self) -> None:
-            pass
-
-        async def stop(self) -> None:
-            pass
-
-        async def send(self, msg: OutboundMessage) -> None:
-            pass
-
-        async def send_delta(
-            self,
-            chat_id: str,
-            delta: str,
-            metadata: dict | None = None,
-        ) -> None:
-            calls.append((chat_id, delta, dict(metadata or {})))
-
-    fake_config = SimpleNamespace(
-        channels=ChannelsConfig(send_max_retries=3),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
+    end = outbound_message_for_event(
+        channel="streaming",
+        chat_id="123",
+        event=StreamEndEvent(content="", stream_id="s1", resuming=True),
     )
-    mgr = ChannelManager.__new__(ChannelManager)
-    mgr.config = fake_config
-    mgr.bus = MessageBus()
-    mgr.channels = {"legacy_streaming": _LegacyStreamingChannel(fake_config, mgr.bus)}
-    mgr._dispatch_task = None
-
-    await mgr._send_with_retry(
-        mgr.channels["legacy_streaming"],
-        outbound_message_for_event(
-            channel="legacy_streaming",
-            chat_id="123",
-            event=StreamDeltaEvent(content="hello", stream_id="s1"),
-        ),
-    )
-    await mgr._send_with_retry(
-        mgr.channels["legacy_streaming"],
-        outbound_message_for_event(
-            channel="legacy_streaming",
-            chat_id="123",
-            event=StreamEndEvent(content="", stream_id="s1", resuming=True),
-        ),
-    )
+    await mgr._send_with_retry(mgr.channels["streaming"], end)
 
     assert calls == [
-        ("123", "hello", {"_stream_id": "s1", "_stream_delta": True}),
-        ("123", "", {"_stream_id": "s1", "_stream_end": True}),
-    ]
-
-
-@pytest.mark.asyncio
-async def test_send_with_retry_supports_legacy_reasoning_signature():
-    """External plugins with the old reasoning hook signature should keep working."""
-    deltas: list[tuple[str, str, dict]] = []
-    ends: list[tuple[str, dict]] = []
-
-    class _LegacyReasoningChannel(BaseChannel):
-        name = "legacy_reasoning"
-        display_name = "Legacy Reasoning"
-
-        async def start(self) -> None:
-            pass
-
-        async def stop(self) -> None:
-            pass
-
-        async def send(self, msg: OutboundMessage) -> None:
-            pass
-
-        async def send_reasoning_delta(
-            self,
-            chat_id: str,
-            delta: str,
-            metadata: dict | None = None,
-        ) -> None:
-            deltas.append((chat_id, delta, dict(metadata or {})))
-
-        async def send_reasoning_end(
-            self,
-            chat_id: str,
-            metadata: dict | None = None,
-        ) -> None:
-            ends.append((chat_id, dict(metadata or {})))
-
-    fake_config = SimpleNamespace(
-        channels=ChannelsConfig(send_max_retries=3),
-        providers=SimpleNamespace(groq=SimpleNamespace(api_key="")),
-    )
-    mgr = ChannelManager.__new__(ChannelManager)
-    mgr.config = fake_config
-    mgr.bus = MessageBus()
-    mgr.channels = {"legacy_reasoning": _LegacyReasoningChannel(fake_config, mgr.bus)}
-    mgr._dispatch_task = None
-
-    await mgr._send_with_retry(
-        mgr.channels["legacy_reasoning"],
-        outbound_message_for_event(
-            channel="legacy_reasoning",
-            chat_id="123",
-            event=ProgressEvent(content="thinking", reasoning_delta=True, stream_id="r1"),
-        ),
-    )
-    await mgr._send_with_retry(
-        mgr.channels["legacy_reasoning"],
-        outbound_message_for_event(
-            channel="legacy_reasoning",
-            chat_id="123",
-            event=ProgressEvent(reasoning_end=True, stream_id="r1"),
-        ),
-    )
-
-    assert deltas == [
-        ("123", "thinking", {"_reasoning_delta": True, "_stream_id": "r1"}),
-    ]
-    assert ends == [
-        ("123", {"_reasoning_end": True, "_stream_id": "r1"}),
+        ("123", "test delta", "s1", False, False),
+        ("123", "", "s1", True, True),
     ]
 
 
