@@ -9,7 +9,7 @@ import pytest
 from loguru import logger
 
 from nanobot.config.schema import ModelPresetConfig
-from nanobot.providers.base import LLMProvider, LLMResponse
+from nanobot.providers.base import ERROR_KIND_CONTEXT_OVERFLOW, LLMProvider, LLMResponse
 from nanobot.providers.fallback_provider import FallbackProvider
 
 
@@ -458,6 +458,44 @@ class TestNoFallbackOnNonRetryableError:
         result = await fb.chat(messages=[{"role": "user", "content": "hi"}])
 
         assert result.finish_reason == "error"
+        factory.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "response",
+        [
+            _make_response(
+                "request rejected",
+                finish_reason="error",
+                error_status_code=500,
+                error_code="input_too_long",
+                error_should_retry=True,
+            ),
+            _make_response(
+                "request rejected",
+                finish_reason="error",
+                error_status_code=413,
+                error_kind=ERROR_KIND_CONTEXT_OVERFLOW,
+                error_should_retry=True,
+            ),
+        ],
+    )
+    async def test_context_overflow_bypasses_fallback_and_circuit_breaker(
+        self, response: LLMResponse
+    ) -> None:
+        primary = _FakeProvider("primary", response)
+        factory = MagicMock(return_value=_FakeProvider("fallback", _make_response("fallback ok")))
+        fb = FallbackProvider(
+            primary=primary,
+            fallback_presets=[_fallback("fallback-a")],
+            provider_factory=factory,
+        )
+
+        result = await fb.chat_with_retry(messages=[{"role": "user", "content": "hi"}])
+
+        assert result is response
+        assert result.error_kind == ERROR_KIND_CONTEXT_OVERFLOW
+        assert fb._primary_failures == 0
         factory.assert_not_called()
 
     @pytest.mark.asyncio

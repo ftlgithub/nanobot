@@ -8,7 +8,7 @@ from typing import Any
 
 from loguru import logger
 
-from nanobot.providers.base import LLMProvider, LLMResponse
+from nanobot.providers.base import ERROR_KIND_CONTEXT_OVERFLOW, LLMProvider, LLMResponse
 
 # Circuit breaker tuned to match OpenAICompatProvider's Responses API breaker.
 _PRIMARY_FAILURE_THRESHOLD = 3
@@ -28,6 +28,7 @@ _NON_FALLBACK_ERROR_KINDS = frozenset({
     "content_filter",
     "refusal",
     "context_length",
+    ERROR_KIND_CONTEXT_OVERFLOW,
     "invalid_request",
 })
 _FALLBACK_ERROR_TOKENS = (
@@ -156,7 +157,7 @@ class FallbackProvider(LLMProvider):
 
         if self._primary_available():
             primary_was_attempted = True
-            response = await call(self._primary, kwargs)
+            response = self._normalize_error_response(await call(self._primary, kwargs))
             if response.finish_reason != "error":
                 self._primary_failures = 0
                 self._primary_tripped_at = None
