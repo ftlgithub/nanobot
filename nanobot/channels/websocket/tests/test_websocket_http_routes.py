@@ -930,6 +930,41 @@ async def test_nanobot_feature_channel_action_can_apply_without_restart(
 
 
 @pytest.mark.asyncio
+async def test_channel_connect_runtime_import_error_is_not_reported_as_unsupported(
+    bus: MagicMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BrokenConnector:
+        async def handle(self, _action: str, _query: dict[str, list[str]]) -> dict[str, Any]:
+            raise ImportError("missing optional sdk")
+
+    class FakePlugin:
+        @staticmethod
+        def load_connector() -> BrokenConnector:
+            return BrokenConnector()
+
+    monkeypatch.setattr(
+        "nanobot.webui.settings_routes.load_channel_plugin",
+        lambda _name: FakePlugin(),
+    )
+    channel = _ch(bus, session_manager=_seed_session(tmp_path), port=_free_port())
+    token = channel.gateway.tokens.issue_api_token(300)
+    response = await channel.gateway.http.settings_routes.dispatch(
+        _LOCAL,
+        _FakeReq(
+            {"Authorization": f"Bearer {token}", "Host": "127.0.0.1:8765"},
+            path="/api/settings/channels/fake/connect/start",
+        ),
+        "/api/settings/channels/fake/connect/start",
+    )
+
+    assert response is not None
+    assert response.status_code == 500
+    assert "failed to start fake connection" in response.body.decode()
+
+
+@pytest.mark.asyncio
 async def test_feishu_connect_routes_write_config_and_hot_reload(
     bus: MagicMock,
     tmp_path: Path,
@@ -1058,8 +1093,8 @@ def test_feishu_connect_create_appends_instance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from nanobot.channels.feishu import runtime as feishu_module
+    from nanobot.channels.feishu.connect import FeishuConnectStore
     from nanobot.config import loader
-    from nanobot.webui.channel_connect import FeishuConnectStore
 
     config_path = tmp_path / "config.json"
     config_path.write_text(

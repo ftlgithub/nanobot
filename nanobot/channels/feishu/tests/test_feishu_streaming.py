@@ -1,3 +1,5 @@
+# ruff: noqa: E402
+
 """Tests for Feishu streaming (send_delta) via CardKit streaming API."""
 import time
 from types import SimpleNamespace
@@ -10,7 +12,7 @@ pytest.importorskip("lark_oapi")
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.outbound_events import ProgressEvent
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.feishu import FeishuChannel, FeishuConfig, _FeishuStreamBuf
+from nanobot.channels.feishu.runtime import FeishuChannel, FeishuConfig, _FeishuStreamBuf
 
 
 def _make_channel(streaming: bool = True, reply_to_message: bool = False) -> FeishuChannel:

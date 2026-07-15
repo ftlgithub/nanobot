@@ -1,3 +1,5 @@
+# ruff: noqa: E402
+
 """Tests for Feishu reaction add/remove and auto-cleanup on stream end."""
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -7,7 +9,7 @@ import pytest
 pytest.importorskip("lark_oapi")
 
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.feishu import FeishuChannel, FeishuConfig, _FeishuStreamBuf
+from nanobot.channels.feishu.runtime import FeishuChannel, FeishuConfig, _FeishuStreamBuf
 
 
 def _make_channel() -> FeishuChannel:

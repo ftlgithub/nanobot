@@ -3,6 +3,7 @@
 from nanobot.channels._manifest import GROUP_POLICIES, field, required
 from nanobot.channels.contracts import ChannelSetupSpec
 from nanobot.channels.plugin import ChannelPlugin
+from nanobot.channels.telegram.validation import validate
 
 SETUP_SPEC = ChannelSetupSpec(
     fields={
@@ -12,6 +13,7 @@ SETUP_SPEC = ChannelSetupSpec(
     },
     required=(required("token"),),
     official_url="https://t.me/BotFather",
+    validator=validate,
 )
 
 PLUGIN = ChannelPlugin(

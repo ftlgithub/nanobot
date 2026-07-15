@@ -165,22 +165,6 @@ def test_builtin_setup_manifests_only_import_contract_modules() -> None:
         assert not unexpected, f"{name} imports runtime dependencies: {unexpected}"
 
 
-def test_builtin_multi_instance_setup_matches_management_declarations() -> None:
-    manifest_multi = {
-        name
-        for name in EXPECTED_CHANNELS
-        if (spec := channel_setup_spec(name)) is not None and spec.multi_instance
-    }
-    management_multi = {
-        name
-        for name in EXPECTED_CHANNELS
-        if (plugin := load_builtin_channel_plugin(name)) is not None
-        and plugin.management.multi_instance
-    }
-
-    assert manifest_multi == management_multi
-
-
 def test_runtime_classes_do_not_declare_persisted_management_hooks() -> None:
     channel_dir = Path(channel_setup_module.__file__).parent
     management_hooks = {
@@ -208,7 +192,7 @@ def test_feishu_package_manifest_owns_runtime_and_webui_metadata() -> None:
     assert plugin is not None
     assert plugin.runtime == "nanobot.channels.feishu.runtime:FeishuChannel"
     assert plugin.optional_extra == "feishu"
-    assert plugin.capabilities == {"multi_instance", "qr_connect"}
+    assert plugin.connector == "nanobot.channels.feishu.connect:FeishuConnectStore"
     assert plugin.management.multi_instance is True
     assert plugin.webui == "webui/index.tsx"
 
@@ -219,7 +203,7 @@ def test_weixin_package_manifest_owns_runtime_and_webui_metadata() -> None:
     assert plugin is not None
     assert plugin.runtime == "nanobot.channels.weixin.runtime:WeixinChannel"
     assert plugin.optional_extra == "weixin"
-    assert plugin.capabilities == {"qr_connect"}
+    assert plugin.connector == "nanobot.channels.weixin.connect:WeixinConnectStore"
     assert plugin.webui == "webui/index.tsx"
 
 

@@ -64,7 +64,7 @@ def _multi_instance_specs(section, *, enabled_only=True):
 def _plugin(channel_cls: type[BaseChannel], *, multi_instance: bool = False) -> ChannelPlugin:
     runtime_attr = f"_runtime_{channel_cls.display_name.lower()}"
     globals()[runtime_attr] = channel_cls
-    setup = ChannelSetupSpec(fields={}, multi_instance=True) if multi_instance else None
+    setup = ChannelSetupSpec(fields={}) if multi_instance else None
     management = (
         ChannelManagementSpec(
             multi_instance=True,

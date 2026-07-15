@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal
@@ -12,12 +13,22 @@ if TYPE_CHECKING:
 
 FieldKind = Literal["string", "secret", "list", "bool", "int", "enum"]
 RouteFieldType = str | tuple[str, set[str]]
-SetupValidator = Callable[[dict[str, Any]], dict[str, Any]]
+
+
+@dataclass(frozen=True, slots=True)
+class ChannelValidationContext:
+    """Host policy passed to package-owned setup validators."""
+
+    allow_local_service_access: bool = False
+
+
+SetupValidator = Callable[[dict[str, Any], ChannelValidationContext], dict[str, Any]]
 DefaultConfigFactory = Callable[[], dict[str, Any]]
 InstanceSpecsFactory = Callable[..., Iterable["ChannelInstanceSpec"]]
 InstanceConfigUpdater = Callable[..., dict[str, Any]]
 RuntimeNameFactory = Callable[[str, str], str]
 FeatureInstancesFactory = Callable[..., list[dict[str, Any]] | None]
+LocalStatePresent = Callable[[Any], bool]
 
 __all__ = [
     "ChannelActivation",
@@ -25,12 +36,14 @@ __all__ = [
     "ChannelInstanceSpec",
     "ChannelManagementSpec",
     "ChannelSetupSpec",
+    "ChannelValidationContext",
     "SetupRequirement",
     "channel_feature_instances",
     "channel_default_config",
     "channel_field_value",
     "channel_instance_config",
     "channel_instance_specs",
+    "channel_local_state_present",
     "channel_runtime_name",
     "resolve_channel_action_target",
     "channel_set_config_enabled",
@@ -146,7 +159,6 @@ class ChannelSetupSpec:
     fields: dict[str, ChannelFieldSpec]
     required: tuple[SetupRequirement, ...] = ()
     official_url: str | None = None
-    multi_instance: bool = False
     validator: SetupValidator | None = None
 
     @property
@@ -226,6 +238,7 @@ class ChannelManagementSpec:
     update_instance_config: InstanceConfigUpdater | None = None
     runtime_name: RuntimeNameFactory | None = None
     feature_instances: FeatureInstancesFactory | None = None
+    local_state_present: LocalStatePresent | None = None
 
     def __post_init__(self) -> None:
         multi_instance_callbacks = {
@@ -250,13 +263,46 @@ class ChannelManagementSpec:
 
 
 def channel_default_config(plugin: ChannelPlugin) -> dict[str, Any]:
+    from nanobot.config.loader import merge_missing_defaults
+
+    defaults: dict[str, Any] = {"enabled": plugin.default_enabled}
+    if plugin.setup is not None:
+        for name, field in plugin.setup.fields.items():
+            value = field.default
+            if value is None:
+                value = {
+                    "string": "",
+                    "secret": "",
+                    "list": [],
+                    "bool": False,
+                }.get(field.kind, _MISSING)
+            if value is not _MISSING:
+                _assign_channel_field(defaults, name, deepcopy(value))
+
     factory = plugin.management.default_config
     if factory is None:
-        return {"enabled": plugin.default_enabled}
+        return defaults
     values = factory()
     if not isinstance(values, dict):
         raise TypeError(f"ChannelPlugin.management.default_config for '{plugin.name}' must return a dict")
-    return dict(values)
+    return merge_missing_defaults(values, defaults)
+
+
+def _assign_channel_field(values: dict[str, Any], field: str, value: Any) -> None:
+    target = values
+    parts = field.split(".")
+    for part in parts[:-1]:
+        nested = target.get(part)
+        if not isinstance(nested, dict):
+            nested = {}
+            target[part] = nested
+        target = nested
+    target[parts[-1]] = value
+
+
+def channel_local_state_present(plugin: ChannelPlugin, section: Any) -> bool:
+    checker = plugin.management.local_state_present
+    return bool(checker and checker(section))
 
 
 def channel_runtime_name(plugin: ChannelPlugin, instance_id: str = "default") -> str:

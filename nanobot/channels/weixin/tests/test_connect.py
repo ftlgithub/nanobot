@@ -5,10 +5,10 @@ from typing import Any
 
 import pytest
 
-from nanobot.channels.weixin import WeixinChannel
+from nanobot.channels.weixin.connect import WeixinConnectStore
+from nanobot.channels.weixin.runtime import WeixinChannel
 from nanobot.config.loader import save_config
 from nanobot.config.schema import Config
-from nanobot.webui.channel_connect import WeixinConnectStore
 
 
 @pytest.mark.asyncio

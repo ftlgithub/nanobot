@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from nanobot.channels.registry import load_channel_plugin
 from nanobot.optional_features import (
     OptionalFeatureError,
     disable_optional_feature,
@@ -39,10 +40,14 @@ def nanobot_features_action(
     if action == "enable":
         return enable_optional_feature(name, allow_install=allow_install, instance_id=instance_id)
     if action == "disable":
-        if name == "websocket":
+        try:
+            plugin = load_channel_plugin(name)
+        except ImportError:
+            plugin = None
+        if plugin is not None and "always_enabled" in plugin.capabilities:
             raise OptionalFeatureError(
-                "The WebUI websocket channel cannot be disabled from WebUI. "
-                "Use `nanobot plugins disable websocket` from a terminal if you need to disable it.",
+                f"The {plugin.display_name} channel cannot be disabled from WebUI. "
+                f"Use `nanobot plugins disable {name}` from a terminal if you need to disable it.",
                 status=400,
             )
         return disable_optional_feature(name, instance_id=instance_id)

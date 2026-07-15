@@ -3,6 +3,7 @@
 from nanobot.channels._manifest import GROUP_POLICIES, field, required_fields
 from nanobot.channels.contracts import ChannelSetupSpec
 from nanobot.channels.plugin import ChannelPlugin
+from nanobot.channels.slack.validation import validate
 
 SETUP_SPEC = ChannelSetupSpec(
     fields={
@@ -12,6 +13,7 @@ SETUP_SPEC = ChannelSetupSpec(
     },
     required=required_fields("appToken", "botToken"),
     official_url="https://api.slack.com/apps",
+    validator=validate,
 )
 
 PLUGIN = ChannelPlugin(

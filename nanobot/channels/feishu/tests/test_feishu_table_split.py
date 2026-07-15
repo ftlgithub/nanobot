@@ -17,7 +17,7 @@ if not FEISHU_AVAILABLE:
     import pytest
     pytest.skip("Feishu dependencies not installed (lark-oapi)", allow_module_level=True)
 
-from nanobot.channels.feishu import FeishuChannel
+from nanobot.channels.feishu.runtime import FeishuChannel
 
 
 def _md(text: str) -> dict:

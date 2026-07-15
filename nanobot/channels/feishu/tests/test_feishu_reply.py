@@ -20,7 +20,7 @@ if not FEISHU_AVAILABLE:
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.outbound_events import ProgressEvent
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.feishu import FeishuChannel, FeishuConfig
+from nanobot.channels.feishu.runtime import FeishuChannel, FeishuConfig
 
 # ---------------------------------------------------------------------------
 # Helpers

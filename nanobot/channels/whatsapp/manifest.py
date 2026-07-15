@@ -1,8 +1,10 @@
 """WhatsApp management contract."""
 
 from nanobot.channels._manifest import DIRECT_GROUP_POLICIES, field
-from nanobot.channels.contracts import ChannelSetupSpec
+from nanobot.channels.contracts import ChannelManagementSpec, ChannelSetupSpec
 from nanobot.channels.plugin import ChannelPlugin
+from nanobot.channels.whatsapp.state import local_state_present
+from nanobot.channels.whatsapp.validation import validate
 
 SETUP_SPEC = ChannelSetupSpec(
     fields={
@@ -16,6 +18,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "databasePath": field(writable=False, snapshot=False),
     },
     official_url="https://faq.whatsapp.com/",
+    validator=validate,
 )
 
 PLUGIN = ChannelPlugin(
@@ -23,7 +26,7 @@ PLUGIN = ChannelPlugin(
     display_name="WhatsApp",
     runtime=f"{__package__}.runtime:WhatsAppChannel",
     setup=SETUP_SPEC,
+    management=ChannelManagementSpec(local_state_present=local_state_present),
     optional_extra="whatsapp",
-    capabilities=frozenset({"qr_connect"}),
     webui="webui/index.ts",
 )

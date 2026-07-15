@@ -6,7 +6,7 @@ from nanobot.channels.plugin import ChannelPlugin
 
 SETUP_SPEC = ChannelSetupSpec(
     fields={
-        "wsUrl": field(),
+        "wsUrl": field(default="ws://127.0.0.1:3001"),
         "accessToken": field("secret"),
         "allowFrom": field("list"),
         "groupPolicy": field("enum", choices=DIRECT_GROUP_POLICIES, default="mention"),

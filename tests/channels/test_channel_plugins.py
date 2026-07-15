@@ -31,6 +31,7 @@ from nanobot.channels.contracts import (
     ChannelManagementSpec,
     ChannelSetupSpec,
     SetupRequirement,
+    channel_default_config,
 )
 from nanobot.channels.manager import ChannelManager
 from nanobot.channels.plugin import ChannelPlugin, load_builtin_channel_plugin
@@ -71,7 +72,7 @@ class _SetupPlugin(_FakePlugin):
     display_name = "Setup Plugin"
 
     @staticmethod
-    def _validate_setup(values):
+    def _validate_setup(values, _context):
         token = str(values.get("token") or "")
         return {
             "status": "connected" if token.startswith("plugin-") else "invalid",
@@ -179,7 +180,7 @@ def _channel_plugin(
             else ChannelManagementSpec(default_config=channel_cls.default_config)
         )
     if setup is None and management.multi_instance:
-        setup = ChannelSetupSpec(fields={}, multi_instance=True)
+        setup = ChannelSetupSpec(fields={})
     return ChannelPlugin(
         name=channel_cls.name,
         display_name=channel_cls.display_name,
@@ -300,6 +301,40 @@ def test_channels_config_extract_document_text_accepts_camel_alias():
     cfg = ChannelsConfig.model_validate({"extractDocumentText": False})
 
     assert cfg.extract_document_text is False
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["websocket", "telegram", "discord", "slack", "email", "feishu", "matrix", "weixin", "whatsapp"],
+)
+def test_special_setup_validation_is_owned_by_channel_package(name: str):
+    plugin = load_builtin_channel_plugin(name)
+
+    assert plugin is not None
+    assert plugin.setup is not None
+    assert plugin.setup.validator is not None
+    assert plugin.setup.validator.__module__ == f"nanobot.channels.{name}.validation"
+
+
+@pytest.mark.parametrize("name", ["feishu", "weixin"])
+def test_interactive_connector_is_owned_by_channel_package(name: str):
+    plugin = load_builtin_channel_plugin(name)
+
+    assert plugin is not None
+    assert plugin.connector is not None
+    assert plugin.connector.startswith(f"nanobot.channels.{name}.")
+    assert plugin.load_connector().__class__.__module__ == f"nanobot.channels.{name}.connect"
+
+
+def test_descriptor_defaults_cover_onboarding_fields_without_runtime_import():
+    qq = load_builtin_channel_plugin("qq")
+    email = load_builtin_channel_plugin("email")
+
+    assert qq is not None
+    assert email is not None
+    assert channel_default_config(qq)["msgFormat"] == "plain"
+    assert channel_default_config(email)["imapPort"] == 993
+    assert channel_default_config(email)["smtpPort"] == 587
 
 
 def test_channel_manager_delegates_instance_expansion_to_channel(monkeypatch: pytest.MonkeyPatch):
@@ -637,8 +672,8 @@ def test_plugin_setup_contract_drives_save_and_validation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
+    from nanobot.channels.validation import validate_channel_config
     from nanobot.config import loader
-    from nanobot.webui.channel_validation import validate_channel_config
     from nanobot.webui.settings_routes import WebUISettingsRouter
 
     config_path = tmp_path / "config.json"
@@ -672,8 +707,8 @@ def test_generic_plugin_validation_enforces_composite_requirements(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    from nanobot.channels.validation import validate_channel_config
     from nanobot.config import loader
-    from nanobot.webui.channel_validation import validate_channel_config
 
     class _CompositeSetupPlugin(_FakePlugin):
         name = "compositeplugin"
@@ -1284,7 +1319,7 @@ def test_plugins_list_reads_multi_instance_state_without_runtime(monkeypatch):
         name="managedmulti",
         display_name="Managed multi",
         runtime="missing.managedmulti.runtime:ManagedMultiChannel",
-        setup=ChannelSetupSpec(fields={}, multi_instance=True),
+        setup=ChannelSetupSpec(fields={}),
         management=_fake_multi_management(),
     )
     config = Config.model_validate({
@@ -1658,7 +1693,7 @@ def test_disable_multi_instance_channel_without_importing_runtime(monkeypatch, t
         name="managedmulti",
         display_name="Managed multi",
         runtime="missing.managedmulti.runtime:ManagedMultiChannel",
-        setup=ChannelSetupSpec(fields={}, multi_instance=True),
+        setup=ChannelSetupSpec(fields={}),
         management=_fake_multi_management(),
     )
     config_path = tmp_path / "config.json"
@@ -1753,7 +1788,7 @@ def test_package_manifest_metadata_drives_optional_feature_payload(monkeypatch):
         runtime="demo.runtime:DemoChannel",
         optional_extra="demo-sdk",
         default_enabled=True,
-        capabilities=frozenset({"qr_connect"}),
+        capabilities=frozenset({"custom_ui"}),
         webui="webui/entry.tsx",
     )
     config = Config.model_validate({"channels": {"demo": {"enabled": False}}})
@@ -1776,7 +1811,7 @@ def test_package_manifest_metadata_drives_optional_feature_payload(monkeypatch):
     demo = next(feature for feature in payload["features"] if feature["name"] == "demo")
     assert checked_extras == [("demo-sdk", ["demo-sdk>=1"])]
     assert demo["display_name"] == "Demo Chat"
-    assert demo["capabilities"] == ["qr_connect"]
+    assert demo["capabilities"] == ["custom_ui"]
     assert demo["webui"] == "webui/entry.tsx"
 
 
@@ -2396,7 +2431,7 @@ async def test_manager_skips_disabled_plugin():
 
 def test_builtin_channel_default_config():
     """Built-in channels expose default_config() returning a dict with 'enabled': False."""
-    from nanobot.channels.dingtalk import DingTalkChannel
+    from nanobot.channels.dingtalk.runtime import DingTalkChannel
     cfg = DingTalkChannel.default_config()
     assert isinstance(cfg, dict)
     assert cfg["enabled"] is False
@@ -2405,7 +2440,7 @@ def test_builtin_channel_default_config():
 
 def test_builtin_channel_init_from_dict():
     """Built-in channels accept a raw dict and convert to Pydantic internally."""
-    from nanobot.channels.dingtalk import DingTalkChannel
+    from nanobot.channels.dingtalk.runtime import DingTalkChannel
     bus = MessageBus()
     ch = DingTalkChannel({"enabled": False, "clientId": "test-id", "allowFrom": ["*"]}, bus)
     assert ch.config.client_id == "test-id"

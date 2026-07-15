@@ -19,6 +19,7 @@ from nanobot.channels.contracts import (
     channel_feature_instances,
     channel_field_value,
     channel_instance_specs,
+    channel_local_state_present,
     channel_set_config_enabled,
     channel_value_present,
     refresh_channel_feature_metadata,
@@ -361,38 +362,6 @@ def _channel_has_required_setup(section: Any, spec: ChannelSetupSpec | None) -> 
     return bool(spec and spec.is_configured(section))
 
 
-def _local_login_state_present(section: Any, name: str) -> bool:
-    """Return whether a QR-login channel has reusable local account state."""
-    from nanobot.config.loader import get_config_path
-
-    if name == "weixin":
-        configured_dir = channel_field_value(section, "stateDir")
-        state_dir = (
-            Path(str(configured_dir)).expanduser()
-            if configured_dir
-            else get_config_path().parent / "weixin"
-        )
-        try:
-            payload = json.loads((state_dir / "account.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
-            return False
-        return bool(str(payload.get("token") or "").strip())
-
-    if name == "whatsapp":
-        configured_path = channel_field_value(section, "databasePath")
-        database_path = (
-            Path(str(configured_path)).expanduser()
-            if configured_path
-            else get_config_path().parent / "whatsapp-auth" / "neonize.db"
-        )
-        try:
-            return database_path.is_file() and database_path.stat().st_size > 0
-        except OSError:
-            return False
-
-    return False
-
-
 def channel_configured(
     config: Config,
     name: str,
@@ -403,17 +372,17 @@ def channel_configured(
 ) -> bool:
     """Return whether a channel has enough saved setup to be enabled directly."""
     section = getattr(config.channels, name, None)
-    if name in {"weixin", "whatsapp"} and _local_login_state_present(section, name):
-        return True
-    if section is None:
-        return False
-
     if plugin is None:
         from nanobot.channels.registry import load_channel_plugin
 
         plugin = load_channel_plugin(name)
 
-    if spec is not None and spec.multi_instance:
+    if channel_local_state_present(plugin, section):
+        return True
+    if section is None:
+        return False
+
+    if plugin.management.multi_instance:
         return any(
             _channel_has_required_setup(instance.config, spec)
             for instance in channel_instance_specs(

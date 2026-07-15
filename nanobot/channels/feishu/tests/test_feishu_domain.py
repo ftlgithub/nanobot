@@ -2,7 +2,7 @@
 from unittest.mock import MagicMock
 
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.feishu import FeishuChannel, FeishuConfig
+from nanobot.channels.feishu.runtime import FeishuChannel, FeishuConfig
 
 
 def _make_channel(domain: str = "feishu") -> FeishuChannel:

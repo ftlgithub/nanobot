@@ -27,6 +27,7 @@ class ChannelPlugin:
     name: str
     display_name: str
     runtime: str
+    connector: str | None = None
     setup: ChannelSetupSpec | None = None
     management: ChannelManagementSpec = ChannelManagementSpec()
     optional_extra: str | None = None
@@ -41,22 +42,13 @@ class ChannelPlugin:
                 "channel plugin name must start with a letter and contain only letters, "
                 "digits, underscores, or hyphens"
             )
-        module_name, separator, attr_name = self.runtime.partition(":")
-        if not separator or not module_name or not attr_name:
-            raise ValueError("channel plugin runtime must use 'module:attribute' syntax")
-        if not all(part.isidentifier() for part in module_name.split(".")):
-            raise ValueError("channel plugin runtime module must be an absolute import path")
-        if not attr_name.isidentifier():
-            raise ValueError("channel plugin runtime attribute must be a Python identifier")
+        _target_parts(self.runtime, label="runtime")
+        if self.connector is not None:
+            _target_parts(self.connector, label="connector")
         if self.setup is not None and not isinstance(self.setup, ChannelSetupSpec):
             raise TypeError("channel plugin setup must be a ChannelSetupSpec or None")
         if not isinstance(self.management, ChannelManagementSpec):
             raise TypeError("channel plugin management must be a ChannelManagementSpec")
-        if self.setup is not None and self.setup.multi_instance != self.management.multi_instance:
-            raise TypeError(
-                f"ChannelPlugin.setup.multi_instance for '{self.name}' must be "
-                f"{self.management.multi_instance} to match ChannelPlugin.management"
-            )
         if self.webui is not None:
             webui = self.webui.replace("\\", "/")
             if webui.startswith("/") or ".." in webui.split("/"):
@@ -85,6 +77,36 @@ class ChannelPlugin:
             )
         return channel_cls
 
+    def load_connector(self) -> Any:
+        """Construct the optional channel-owned interactive connector."""
+        if self.connector is None:
+            raise ImportError(f"Channel plugin '{self.name}' does not provide a connector")
+        module_name, attr_name = _target_parts(self.connector, label="connector")
+        module = importlib.import_module(module_name)
+        factory = getattr(module, attr_name, None)
+        if not callable(factory):
+            raise ImportError(
+                f"Channel plugin '{self.name}' connector '{self.connector}' is not callable"
+            )
+        connector = factory()
+        if not callable(getattr(connector, "handle", None)):
+            raise ImportError(
+                f"Channel plugin '{self.name}' connector '{self.connector}' "
+                "does not provide handle()"
+            )
+        return connector
+
+
+def _target_parts(target: str, *, label: str) -> tuple[str, str]:
+    module_name, separator, attr_name = target.partition(":")
+    if not separator or not module_name or not attr_name:
+        raise ValueError(f"channel plugin {label} must use 'module:attribute' syntax")
+    if not all(part.isidentifier() for part in module_name.split(".")):
+        raise ValueError(f"channel plugin {label} module must be an absolute import path")
+    if not attr_name.isidentifier():
+        raise ValueError(f"channel plugin {label} attribute must be a Python identifier")
+    return module_name, attr_name
+
 
 def has_builtin_channel_package(name: str) -> bool:
     """Return whether *name* owns a dependency-free package manifest."""
@@ -109,25 +131,29 @@ def load_builtin_channel_plugin(name: str) -> ChannelPlugin | None:
             f"{module_name}.PLUGIN declares name '{plugin.name}', expected '{name}'"
         )
 
-    runtime_module, _, _ = plugin.runtime.partition(":")
     package_name = f"nanobot.channels.{name}"
-    if not runtime_module.startswith(f"{package_name}."):
-        raise TypeError(
-            f"{module_name}.PLUGIN runtime must stay inside {package_name}: "
-            f"{runtime_module}"
-        )
-    runtime_parts = runtime_module.removeprefix(f"{package_name}.").split(".")
     package_root = files("nanobot.channels").joinpath(name)
-    runtime_file = package_root.joinpath(
-        *runtime_parts[:-1],
-        f"{runtime_parts[-1]}.py",
-    )
-    runtime_package = package_root.joinpath(*runtime_parts, "__init__.py")
-    if not (runtime_file.is_file() or runtime_package.is_file()):
-        raise TypeError(
-            f"{module_name}.PLUGIN runtime module does not exist inside its package: "
-            f"{runtime_module}"
+    targets = [("runtime", plugin.runtime)]
+    if plugin.connector is not None:
+        targets.append(("connector", plugin.connector))
+    for label, target in targets:
+        target_module, _ = _target_parts(target, label=label)
+        if not target_module.startswith(f"{package_name}."):
+            raise TypeError(
+                f"{module_name}.PLUGIN {label} must stay inside {package_name}: "
+                f"{target_module}"
+            )
+        target_parts = target_module.removeprefix(f"{package_name}.").split(".")
+        target_file = package_root.joinpath(
+            *target_parts[:-1],
+            f"{target_parts[-1]}.py",
         )
+        target_package = package_root.joinpath(*target_parts, "__init__.py")
+        if not (target_file.is_file() or target_package.is_file()):
+            raise TypeError(
+                f"{module_name}.PLUGIN {label} module does not exist inside its package: "
+                f"{target_module}"
+            )
     if plugin.webui is not None:
         webui_entry = files("nanobot.channels").joinpath(name, *plugin.webui.split("/"))
         if not webui_entry.is_file():

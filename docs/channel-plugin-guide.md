@@ -29,6 +29,8 @@ Both extension paths expose generic settings through `ChannelPlugin.setup`. Cust
 | Runtime behavior and platform SDK use | `runtime.py` and package-local helpers |
 | Writable settings fields, types, defaults, requirements, secret handling, and validation | `ChannelPlugin.setup` in `manifest.py` |
 | Persisted config expansion, instance updates, and runtime naming | `ChannelPlugin.management` backed by a dependency-free module |
+| Interactive setup connections and their short-lived state | `ChannelPlugin.connector` backed by package-local `connect.py` |
+| Reusable local login-state detection | `ChannelPlugin.management.local_state_present` backed by package-local code |
 | Discovery metadata and lazy runtime target | `PLUGIN` in `manifest.py` |
 | Built-in WebUI structure, components, URLs, field keys, actions, and preset values | `webui/index.ts` or `webui/index.tsx` |
 | Channel-specific user-facing copy | `webui/locales/<locale>.json` |
@@ -240,10 +242,13 @@ Use this section when changing the nanobot repository itself. Every built-in cha
 
 ```text
 nanobot/channels/<channel>/
-├── __init__.py                 # lazy compatibility exports; no eager platform SDK import
+├── __init__.py                 # package marker only; no runtime or SDK imports
 ├── manifest.py                 # dependency-free ChannelPlugin and ChannelSetupSpec
 ├── config.py                   # optional dependency-free config model and defaults
+├── connect.py                  # optional interactive setup connector
 ├── instances.py                # optional dependency-free multi-instance management adapter
+├── state.py                    # optional persisted login-state detection
+├── validation.py               # optional package-owned setup checks
 ├── runtime.py                  # BaseChannel implementation and platform SDK imports
 ├── tests/                      # channel-specific Python tests
 └── webui/                      # optional, compiled into the shared WebUI
@@ -257,9 +262,11 @@ Do not add a built-in runtime module directly under `nanobot/channels/`, create 
 
 ### Manifest and Runtime Boundary
 
-`manifest.py` exports a typed `ChannelPlugin` whose `runtime` target is an absolute import target, such as `nanobot.channels.telegram.runtime:TelegramChannel`; using `f"{__package__}.runtime:TelegramChannel"` keeps it package-owned without repeating the package path. Discovery imports the manifest before it knows whether the optional platform dependency is installed, so `manifest.py` must not import `runtime.py` or any platform SDK. Keep historical package imports lazy in `__init__.py` for the same reason.
+`manifest.py` exports a typed `ChannelPlugin` whose `runtime` target is an absolute import target, such as `nanobot.channels.telegram.runtime:TelegramChannel`; using `f"{__package__}.runtime:TelegramChannel"` keeps it package-owned without repeating the package path. Discovery imports the manifest before it knows whether the optional platform dependency is installed, so `manifest.py` must not import `runtime.py` or any platform SDK. Import runtime symbols from `runtime.py` explicitly; `__init__.py` remains an inert package marker.
 
-The manifest owns the channel name, display name, setup contract, management adapter, optional dependency extra, capabilities, default activation, and optional WebUI entry path. `ChannelSetupSpec.multi_instance` must agree with `ChannelPlugin.management.multi_instance`; descriptor construction rejects a mismatch before importing the runtime.
+The manifest owns the channel name, display name, setup contract, management adapter, optional connector target, optional dependency extra, capabilities, default activation, and optional WebUI entry path. The management adapter alone decides whether a channel is single-instance or multi-instance.
+
+Interactive browser setup uses one small connector contract. Set `connector=f"{__package__}.connect:MyConnectStore"`; the target is loaded only when `/api/settings/channels/<name>/connect/{start,poll,cancel}` is called. The store exposes one async `handle(action, query)` method and keeps platform-specific parsing, sessions, and errors inside the channel package. The shared settings router only authenticates, dispatches, and applies a successful connection.
 
 Use the small constructors in [`nanobot/channels/_manifest.py`](../nanobot/channels/_manifest.py) for declarative field and requirement definitions. Use [`nanobot/channels/dingtalk/manifest.py`](../nanobot/channels/dingtalk/manifest.py) as a compact single-instance example and [`nanobot/channels/feishu/`](../nanobot/channels/feishu/) as a multi-instance example.
 
@@ -398,7 +405,7 @@ nanobot channels login <channel_name> --force  # re-authenticate
 |-------------------|-------------|
 | `_handle_message(sender_id, chat_id, content, media?, metadata?, session_key?)` | **Call this when you receive a message.** Checks `is_allowed()`, then publishes to the bus. Automatically sets `_wants_stream` if `supports_streaming` is true. |
 | `is_allowed(sender_id)` | Checks against `config.allow_from`; `"*"` allows all, `[]` denies all. |
-| `default_config()` (classmethod) | Returns default config dict for `nanobot onboard`. Override to declare your fields. |
+| `default_config()` (classmethod) | Returns runtime-local defaults for callers that construct the class directly. Discovery and onboarding use the descriptor instead. |
 | `refresh_feature_metadata(config_path, instance_id)` (classmethod) | Optionally refreshes saved display metadata after an explicit settings action. It is never called by a read-only feature GET. |
 | `transcribe_audio(file_path)` | Transcribes audio via the shared top-level `transcription` config (if configured). |
 | `supports_streaming` (property) | `True` when config has `"streaming": true` **and** subclass overrides `send_delta()`. |
@@ -432,7 +439,6 @@ PLUGIN = ChannelPlugin(
             ),
         },
         required=(SetupRequirement.field("token"),),
-        multi_instance=True,
     ),
     management=MANAGEMENT,
 )
@@ -469,11 +475,11 @@ MANAGEMENT = ChannelManagementSpec(
 )
 ```
 
-`ChannelSetupSpec` is authoritative for writable field names, field types, choices, defaults, required setup, secret redaction, and optional backend validation. The settings API rejects fields outside this contract.
+`ChannelSetupSpec` is authoritative for writable field names, field types, choices, defaults, required setup, secret redaction, and optional backend validation. The settings API rejects fields outside this contract. A validator receives `(values, context)`; use `context.allow_local_service_access` for host network policy instead of loading global config from the channel package.
 
-The dependency-free `MANAGEMENT` value is a `ChannelManagementSpec`. Multi-instance plugins provide `instance_specs(section, enabled_only=True)` and `update_instance_config(section, values, instance_id=...)`; they may also provide `default_config`, `runtime_name`, and presentation-only `feature_instances`. Single-instance plugins can use the default adapter or provide only `default_config`.
+The dependency-free `MANAGEMENT` value is a `ChannelManagementSpec`. Multi-instance plugins provide `instance_specs(section, enabled_only=True)` and `update_instance_config(section, values, instance_id=...)`; they may also provide `default_config`, `runtime_name`, presentation-only `feature_instances`, and `local_state_present`. Single-instance plugins normally derive onboarding defaults from `ChannelSetupSpec`; use `default_config` only when persisted defaults include fields that are not part of generic setup.
 
-Multi-instance adapters return `ChannelInstanceSpec` objects and preserve their persisted envelope when updating one instance. Their descriptor must set both `ChannelSetupSpec(multi_instance=True)` and `ChannelManagementSpec(multi_instance=True)`. The shared contract enforces these invariants:
+Multi-instance adapters return `ChannelInstanceSpec` objects and preserve their persisted envelope when updating one instance. Their descriptor sets `ChannelManagementSpec(multi_instance=True)`. The shared contract enforces these invariants:
 
 - every `instance_id` is non-empty and unique;
 - the management adapter's `runtime_name(channel_name, instance_id)` is the single source of routing names, and every derived name is unique and is either the channel name or starts with `<channel-name>.`;
@@ -771,17 +777,18 @@ async def start(self) -> None:
 
 `allowFrom` is handled automatically by `_handle_message()` — you don't need to check it yourself.
 
-Override `default_config()` so `nanobot onboard` auto-populates `config.json`:
+`nanobot onboard` reads the descriptor without importing the runtime. Put writable defaults in `ChannelSetupSpec`:
 
 ```python
-@classmethod
-def default_config(cls) -> dict[str, Any]:
-    return WebhookConfig().model_dump(by_alias=True)
+setup=ChannelSetupSpec(
+    fields={
+        "port": ChannelFieldSpec(kind="int", default=9000),
+        "allowFrom": ChannelFieldSpec(kind="list"),
+    },
+)
 ```
 
-> **Note:** `default_config()` returns a plain `dict` (not a Pydantic model) because it's used to serialize into `config.json`. The recommended way is to instantiate your config model and call `model_dump(by_alias=True)` — this automatically uses camelCase keys (`allowFrom`) and keeps defaults in a single source of truth.
-
-If not overridden, the base class returns `{"enabled": false}`.
+String and secret fields default to `""`, list fields to `[]`, and boolean fields to `false` when no explicit default is declared. For non-setup or multi-instance persisted defaults, provide `ChannelManagementSpec.default_config` from a dependency-free package-local module.
 
 ## Naming Convention
 

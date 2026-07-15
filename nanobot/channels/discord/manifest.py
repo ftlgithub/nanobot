@@ -2,6 +2,7 @@
 
 from nanobot.channels._manifest import DIRECT_GROUP_POLICIES, field, required
 from nanobot.channels.contracts import ChannelSetupSpec
+from nanobot.channels.discord.validation import validate
 from nanobot.channels.plugin import ChannelPlugin
 
 SETUP_SPEC = ChannelSetupSpec(
@@ -13,6 +14,7 @@ SETUP_SPEC = ChannelSetupSpec(
     },
     required=(required("token"),),
     official_url="https://discord.com/developers/applications",
+    validator=validate,
 )
 
 PLUGIN = ChannelPlugin(

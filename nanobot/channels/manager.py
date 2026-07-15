@@ -151,7 +151,7 @@ class ChannelManager:
     ) -> BaseChannel:
         kwargs: dict[str, Any] = {}
         if cls.name == "websocket":
-            from nanobot.channels.websocket import WebSocketConfig
+            from nanobot.channels.websocket.runtime import WebSocketConfig
             from nanobot.webui.gateway_services import build_gateway_services
 
             parsed = WebSocketConfig.model_validate(section)
@@ -364,12 +364,12 @@ class ChannelManager:
         plugin = discover_plugins({name}).get(name)
         if plugin is None:
             return {"handled": False}
-        if name == "websocket":
+        if "always_enabled" in plugin.capabilities:
             return {
                 "handled": True,
                 "ok": False,
                 "requires_restart": True,
-                "message": "WebSocket hosts the WebUI and is applied on restart.",
+                "message": f"{plugin.display_name} is always enabled and is applied on restart.",
             }
 
         from nanobot.config.loader import load_config

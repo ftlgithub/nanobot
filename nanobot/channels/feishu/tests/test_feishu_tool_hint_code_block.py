@@ -18,7 +18,7 @@ if not FEISHU_AVAILABLE:
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.outbound_events import ProgressEvent
-from nanobot.channels.feishu import FeishuChannel
+from nanobot.channels.feishu.runtime import FeishuChannel
 
 
 @pytest.fixture

@@ -3,6 +3,7 @@
 from nanobot.channels._manifest import DIRECT_GROUP_POLICIES, field, required_fields
 from nanobot.channels.contracts import ChannelSetupSpec
 from nanobot.channels.feishu.instances import FEISHU_MANAGEMENT
+from nanobot.channels.feishu.validation import validate
 from nanobot.channels.plugin import ChannelPlugin
 
 SETUP_SPEC = ChannelSetupSpec(
@@ -22,20 +23,20 @@ SETUP_SPEC = ChannelSetupSpec(
             snapshot=False,
         ),
         "allowFrom": field("list", snapshot=False),
-        "topicIsolation": field("bool", snapshot=False),
+        "topicIsolation": field("bool", default=True, snapshot=False),
     },
     required=required_fields("appId", "appSecret"),
     official_url="https://open.feishu.cn/app",
-    multi_instance=True,
+    validator=validate,
 )
 
 PLUGIN = ChannelPlugin(
     name="feishu",
     display_name="Feishu",
     runtime=f"{__package__}.runtime:FeishuChannel",
+    connector=f"{__package__}.connect:FeishuConnectStore",
     setup=SETUP_SPEC,
     management=FEISHU_MANAGEMENT,
     optional_extra="feishu",
-    capabilities=frozenset({"multi_instance", "qr_connect"}),
     webui="webui/index.tsx",
 )

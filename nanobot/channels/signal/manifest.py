@@ -7,8 +7,8 @@ from nanobot.channels.plugin import ChannelPlugin
 SETUP_SPEC = ChannelSetupSpec(
     fields={
         "phoneNumber": field(),
-        "daemonHost": field(),
-        "daemonPort": field("int"),
+        "daemonHost": field(default="localhost"),
+        "daemonPort": field("int", default=8080),
         "dm.allowFrom": field("list"),
         "group.allowFrom": field("list"),
     },

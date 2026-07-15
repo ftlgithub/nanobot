@@ -2,21 +2,22 @@
 
 from nanobot.channels._manifest import field, required_fields
 from nanobot.channels.contracts import ChannelSetupSpec
+from nanobot.channels.email.validation import validate
 from nanobot.channels.plugin import ChannelPlugin
 
 SETUP_SPEC = ChannelSetupSpec(
     fields={
         "consentGranted": field("bool", default=False),
         "imapHost": field(),
-        "imapPort": field("int"),
+        "imapPort": field("int", default=993),
         "imapUsername": field(),
         "imapPassword": field("secret"),
         "smtpHost": field(),
-        "smtpPort": field("int"),
+        "smtpPort": field("int", default=587),
         "smtpUsername": field(),
         "smtpPassword": field("secret"),
         "fromAddress": field(),
-        "pollIntervalSeconds": field("int"),
+        "pollIntervalSeconds": field("int", default=30),
         "allowFrom": field("list"),
         "verifyDkim": field("bool", default=True),
         "verifySpf": field("bool", default=True),
@@ -31,6 +32,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "smtpPassword",
     ),
     official_url="https://support.google.com/accounts/answer/185833",
+    validator=validate,
 )
 
 PLUGIN = ChannelPlugin(

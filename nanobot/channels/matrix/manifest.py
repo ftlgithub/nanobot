@@ -2,11 +2,12 @@
 
 from nanobot.channels._manifest import GROUP_POLICIES, field, one_of, required_fields
 from nanobot.channels.contracts import ChannelSetupSpec
+from nanobot.channels.matrix.validation import validate
 from nanobot.channels.plugin import ChannelPlugin
 
 SETUP_SPEC = ChannelSetupSpec(
     fields={
-        "homeserver": field(),
+        "homeserver": field(default="https://matrix.org"),
         "userId": field(),
         "password": field("secret"),
         "accessToken": field("secret"),
@@ -19,6 +20,7 @@ SETUP_SPEC = ChannelSetupSpec(
         one_of(("password",), ("accessToken", "deviceId")),
     ),
     official_url="https://matrix.org/ecosystem/clients/",
+    validator=validate,
 )
 
 PLUGIN = ChannelPlugin(

@@ -11,7 +11,8 @@ import pytest
 
 from nanobot.bus.outbound_events import ProgressEvent
 from nanobot.bus.queue import MessageBus
-from nanobot.channels.weixin import (
+from nanobot.channels.weixin import runtime as weixin_mod
+from nanobot.channels.weixin.runtime import (
     ITEM_IMAGE,
     ITEM_TEXT,
     MESSAGE_TYPE_BOT,
@@ -21,7 +22,6 @@ from nanobot.channels.weixin import (
     _decrypt_aes_ecb,
     _encrypt_aes_ecb,
 )
-from nanobot.channels.weixin import runtime as weixin_mod
 
 
 def _make_channel() -> tuple[WeixinChannel, MessageBus]:

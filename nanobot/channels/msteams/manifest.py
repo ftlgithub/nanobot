@@ -9,7 +9,7 @@ SETUP_SPEC = ChannelSetupSpec(
         "appId": field(),
         "appPassword": field("secret"),
         "tenantId": field(),
-        "path": field(),
+        "path": field(default="/api/messages"),
         "allowFrom": field("list"),
     },
     required=required_fields("appId", "appPassword"),

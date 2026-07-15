@@ -728,22 +728,24 @@ def _onboard_plugins(config_path: Path) -> None:
     """Inject default config for all discovered channels (built-in + plugins)."""
     import json
 
-    from nanobot.channels.registry import discover_all
+    from nanobot.channels.contracts import channel_default_config
+    from nanobot.channels.registry import discover_plugins
     from nanobot.config.loader import merge_missing_defaults
 
-    all_channels = discover_all()
-    if not all_channels:
+    plugins = discover_plugins()
+    if not plugins:
         return
 
     with open(config_path, encoding="utf-8") as f:
         data = json.load(f)
 
     channels = data.setdefault("channels", {})
-    for name, cls in all_channels.items():
+    for name, plugin in plugins.items():
+        defaults = channel_default_config(plugin)
         if name not in channels:
-            channels[name] = cls.default_config()
+            channels[name] = defaults
         else:
-            channels[name] = merge_missing_defaults(channels[name], cls.default_config())
+            channels[name] = merge_missing_defaults(channels[name], defaults)
 
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
@@ -936,7 +938,7 @@ def _provider_setup_error(config: Config) -> str | None:
 
 def _webui_config_dict(config: Config) -> dict[str, Any]:
     """Return the current WebSocket config as a mutable alias-key dictionary."""
-    from nanobot.channels.websocket import WebSocketConfig
+    from nanobot.channels.websocket.runtime import WebSocketConfig
 
     current = getattr(config.channels, "websocket", None) or {}
     model = WebSocketConfig.model_validate(current)
@@ -944,7 +946,7 @@ def _webui_config_dict(config: Config) -> dict[str, Any]:
 
 
 def _webui_channel_enabled(config: Config) -> bool:
-    from nanobot.channels.websocket import WebSocketConfig
+    from nanobot.channels.websocket.runtime import WebSocketConfig
 
     current = getattr(config.channels, "websocket", None) or {}
     return bool(WebSocketConfig.model_validate(current).enabled)
@@ -1049,7 +1051,7 @@ def _webui_display_url(url: str) -> str:
 
 def _ensure_local_webui_channel(config: Config, *, port: int | None, yes: bool) -> tuple[bool, bool]:
     """Enable the local WebUI channel with safe localhost defaults."""
-    from nanobot.channels.websocket import WebSocketConfig
+    from nanobot.channels.websocket.runtime import WebSocketConfig
 
     current = getattr(config.channels, "websocket", None) or {}
     model = WebSocketConfig.model_validate(current)

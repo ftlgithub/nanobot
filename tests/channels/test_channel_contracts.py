@@ -17,6 +17,7 @@ from nanobot.channels.contracts import (
     ChannelInstanceSpec,
     ChannelManagementSpec,
     ChannelSetupSpec,
+    ChannelValidationContext,
     SetupRequirement,
     channel_feature_instances,
     channel_instance_config,
@@ -52,7 +53,10 @@ class _SetupChannel(_SingleChannel):
     name = "setup_contract"
 
     @staticmethod
-    def _validate(values: dict[str, Any]) -> dict[str, Any]:
+    def _validate(
+        values: dict[str, Any],
+        _context: ChannelValidationContext,
+    ) -> dict[str, Any]:
         return {
             "status": "connected" if values.get("token") else "invalid",
             "checks": [],
@@ -133,7 +137,7 @@ def test_contract_module_is_not_discovered_as_a_channel() -> None:
 def test_settings_contract_import_does_not_eagerly_load_runtime_graph() -> None:
     code = """
 import sys
-import nanobot.webui.channel_validation
+import nanobot.channels.validation
 
 unexpected = {
     "nanobot.channels.manager",
@@ -141,9 +145,6 @@ unexpected = {
     "nanobot.webui.gateway_services",
 } & sys.modules.keys()
 assert not unexpected, sorted(unexpected)
-
-from nanobot.channels import ChannelManager
-assert ChannelManager.__name__ == "ChannelManager"
 """
     result = subprocess.run(
         [sys.executable, "-c", code],
@@ -289,7 +290,6 @@ def test_channel_feature_instances_use_generic_setup_snapshot() -> None:
             "topicIsolation": ChannelFieldSpec(kind="bool"),
         },
         required=(SetupRequirement.field("token"),),
-        multi_instance=True,
     )
     plugin = ChannelPlugin(
         name="feature-multi",
@@ -484,7 +484,7 @@ def test_channel_instance_contract_materializes_generators() -> None:
         name="generated",
         display_name="Generated",
         runtime=f"{__name__}:_SingleChannel",
-        setup=ChannelSetupSpec(fields={}, multi_instance=True),
+        setup=ChannelSetupSpec(fields={}),
         management=ChannelManagementSpec(
             multi_instance=True,
             instance_specs=generate_specs,
@@ -531,7 +531,7 @@ def test_channel_instance_contract_rejects_invalid_specs(instance_ids, message) 
         name="invalid",
         display_name="Invalid",
         runtime=f"{__name__}:_SingleChannel",
-        setup=ChannelSetupSpec(fields={}, multi_instance=True),
+        setup=ChannelSetupSpec(fields={}),
         management=ChannelManagementSpec(
             multi_instance=True,
             instance_specs=lambda section, *, enabled_only=True: [
@@ -551,7 +551,7 @@ def test_channel_instance_contract_rejects_runtime_name_outside_namespace() -> N
         name="invalid",
         display_name="Invalid",
         runtime=f"{__name__}:_SingleChannel",
-        setup=ChannelSetupSpec(fields={}, multi_instance=True),
+        setup=ChannelSetupSpec(fields={}),
         management=ChannelManagementSpec(
             multi_instance=True,
             instance_specs=lambda section, *, enabled_only=True: [
@@ -576,7 +576,7 @@ def test_channel_setup_contract_owns_fields_and_validation() -> None:
     assert spec.route_field_types == {"token": "secret"}
     assert spec.is_configured({"token": "saved"}) is True
     assert spec.validator is not None
-    assert spec.validator({"token": "saved"})["status"] == "connected"
+    assert spec.validator({"token": "saved"}, ChannelValidationContext())["status"] == "connected"
     assert spec.to_public_dict(_SetupChannel.name) == {
         "fields": [{
             "key": "channels.setup_contract.token",
@@ -586,18 +586,3 @@ def test_channel_setup_contract_owns_fields_and_validation() -> None:
             "required": True,
         }],
     }
-
-
-def test_channel_setup_contract_rejects_instance_mode_drift() -> None:
-    with pytest.raises(TypeError, match=r"ChannelPlugin\.setup\.multi_instance.*must be True"):
-        ChannelPlugin(
-            name="invalid_setup_multi",
-            display_name="Invalid setup multi",
-            runtime=f"{__name__}:_SingleChannel",
-            setup=ChannelSetupSpec(fields={}),
-            management=ChannelManagementSpec(
-                multi_instance=True,
-                instance_specs=lambda section, *, enabled_only=True: [],
-                update_instance_config=lambda section, values, *, instance_id="default": values,
-            ),
-        )
