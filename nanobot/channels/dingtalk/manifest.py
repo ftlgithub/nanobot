@@ -19,6 +19,6 @@ PLUGIN = ChannelPlugin(
     display_name="DingTalk",
     runtime=f"{__package__}.runtime:DingTalkChannel",
     setup=SETUP_SPEC,
-    optional_extra="dingtalk",
+    dependencies=("dingtalk-stream>=0.24.0,<1.0.0",),
     webui="webui/index.ts",
 )

@@ -9,6 +9,8 @@ from functools import lru_cache
 from importlib.resources import files
 from typing import TYPE_CHECKING, Any
 
+from packaging.requirements import InvalidRequirement, Requirement
+
 from nanobot.channels.contracts import ChannelManagementSpec, ChannelSetupSpec
 
 if TYPE_CHECKING:
@@ -32,7 +34,7 @@ class ChannelPlugin:
     connector: str | None = None
     setup: ChannelSetupSpec | None = None
     management: ChannelManagementSpec = ChannelManagementSpec()
-    optional_extra: str | None = None
+    dependencies: tuple[str, ...] = ()
     default_enabled: bool = False
     settings_visible: bool = True
     capabilities: frozenset[str] = frozenset()
@@ -51,6 +53,18 @@ class ChannelPlugin:
             raise TypeError("channel plugin setup must be a ChannelSetupSpec or None")
         if not isinstance(self.management, ChannelManagementSpec):
             raise TypeError("channel plugin management must be a ChannelManagementSpec")
+        if not isinstance(self.dependencies, tuple) or not all(
+            isinstance(requirement, str) and requirement.strip()
+            for requirement in self.dependencies
+        ):
+            raise TypeError("channel plugin dependencies must be a tuple of requirements")
+        for dependency in self.dependencies:
+            try:
+                Requirement(dependency)
+            except InvalidRequirement as exc:
+                raise ValueError(
+                    f"channel plugin dependency is not a valid requirement: {dependency}"
+                ) from exc
         if self.webui is not None:
             webui = self.webui.replace("\\", "/")
             if webui.startswith("/") or ".." in webui.split("/"):

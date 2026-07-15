@@ -67,6 +67,7 @@ import { SkillsCatalogSettings } from "@/components/settings/SkillsCatalogSettin
 import { TokenUsageHeatmap } from "@/components/settings/TokenUsageHeatmap";
 import { ToggleButton } from "@/components/settings/ToggleButton";
 import {
+  channelIsRunning,
   channelMatchesFilter,
   channelSearchText,
   localizedChannelDisplayName,
@@ -747,23 +748,37 @@ export function SettingsView({
   useEffect(() => {
     if (!["channels", "models", "browser", "runtime"].includes(activeSection)) return;
     let cancelled = false;
-    setNanobotFeaturesLoading(true);
-    fetchNanobotFeatures(token)
-      .then((payload) => {
+    const refresh = async (showLoading = false) => {
+      if (showLoading) setNanobotFeaturesLoading(true);
+      try {
+        const payload = await fetchNanobotFeatures(token);
         if (!cancelled) {
           setNanobotFeatures(payload);
           setNanobotFeaturesError(null);
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         const message = (err as Error).message;
         if (!cancelled && message !== "HTTP 404") setNanobotFeaturesError(message);
-      })
-      .finally(() => {
-        if (!cancelled) setNanobotFeaturesLoading(false);
-      });
+      } finally {
+        if (!cancelled && showLoading) setNanobotFeaturesLoading(false);
+      }
+    };
+    void refresh(true);
+    const interval = activeSection === "channels"
+      ? window.setInterval(() => void refresh(false), 5000)
+      : null;
+    const refreshOnFocus = () => {
+      if (activeSection === "channels" && document.visibilityState !== "hidden") {
+        void refresh(false);
+      }
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnFocus);
     return () => {
       cancelled = true;
+      if (interval !== null) window.clearInterval(interval);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnFocus);
     };
   }, [activeSection, token]);
 
@@ -5374,7 +5389,7 @@ function ChannelsSettings({
   const [selectedChannelName, setSelectedChannelName] = useState<string | null>(null);
   const selectedChannel =
     channels.find((feature) => feature.name === selectedChannelName) ?? channels[0] ?? null;
-  const enabledCount = allChannels.filter((feature) => feature.enabled).length;
+  const enabledCount = allChannels.filter(channelIsRunning).length;
   const offCount = Math.max(0, allChannels.length - enabledCount);
   const filterOptions: Array<{ value: ChannelFilter; label: string; count: number }> = [
     { value: "all", label: tx("settings.channels.filterAll", "All"), count: allChannels.length },

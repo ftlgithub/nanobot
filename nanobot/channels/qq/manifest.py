@@ -20,6 +20,9 @@ PLUGIN = ChannelPlugin(
     display_name="QQ",
     runtime=f"{__package__}.runtime:QQChannel",
     setup=SETUP_SPEC,
-    optional_extra="qq",
+    dependencies=(
+        "aiohttp>=3.9.0,<4.0.0",
+        "qq-botpy>=1.2.0,<2.0.0",
+    ),
     webui="webui/index.ts",
 )

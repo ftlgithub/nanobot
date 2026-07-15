@@ -402,6 +402,16 @@ def channel_configured(
     return _channel_has_required_setup(section, spec)
 
 
+def _feature_dependencies(
+    name: str,
+    channel_plugin: Any | None,
+    extras: dict[str, list[str] | None],
+) -> list[str] | None:
+    if channel_plugin is not None:
+        return list(channel_plugin.dependencies)
+    return extras.get(name)
+
+
 def optional_features_payload(
     *,
     config: Config | None = None,
@@ -413,20 +423,15 @@ def optional_features_payload(
     config = config or load_config()
     extras = optional_dependency_groups()
     channel_plugins = discover_plugins()
-    claimed_extras = {
-        plugin.optional_extra
-        for plugin in channel_plugins.values()
-        if plugin is not None and plugin.optional_extra is not None
-    }
     features: list[dict[str, Any]] = []
 
-    feature_names = set(channel_plugins) | (set(extras) - claimed_extras)
+    feature_names = set(channel_plugins) | set(extras)
     for name in sorted(feature_names):
         channel_plugin = channel_plugins.get(name)
         is_channel = channel_plugin is not None
-        extra_name = channel_plugin.optional_extra if channel_plugin else name
-        has_extra = bool(extra_name and extra_name in extras)
-        installed = extra_installed(extra_name, extras[extra_name]) if has_extra else True
+        dependencies = _feature_dependencies(name, channel_plugin, extras)
+        has_dependencies = bool(dependencies)
+        installed = extra_installed(name, dependencies) if has_dependencies else True
         feature = {
             "name": name,
             "display_name": (
@@ -436,7 +441,7 @@ def optional_features_payload(
             ),
             "type": "channel" if is_channel else "feature",
             "installed": installed,
-            "install_supported": has_extra or is_channel,
+            "install_supported": has_dependencies or is_channel,
             "requires_restart": _feature_requires_restart(name, is_channel=is_channel),
         }
         if channel_plugin is not None:
@@ -517,6 +522,108 @@ def optional_features_payload(
     return payload
 
 
+def with_channel_runtime_status(
+    payload: dict[str, Any],
+    runtime_status: dict[str, Any],
+) -> dict[str, Any]:
+    """Overlay live ChannelManager state on configuration-derived features."""
+    statuses_by_owner: dict[str, list[dict[str, Any]]] = {}
+    for status in runtime_status.values():
+        if not isinstance(status, dict):
+            continue
+        owner = status.get("owner")
+        if isinstance(owner, str):
+            statuses_by_owner.setdefault(owner, []).append(status)
+
+    features: list[dict[str, Any]] = []
+    for original in payload.get("features", []):
+        feature = dict(original)
+        if feature.get("type") != "channel":
+            features.append(feature)
+            continue
+
+        desired_enabled = bool(feature.get("enabled"))
+        owner_statuses = statuses_by_owner.get(str(feature.get("name")), [])
+        if desired_enabled and not owner_statuses:
+            owner_statuses = [{
+                "state": "failed",
+                "running": False,
+                "error": "Enabled channel has no runtime. Check gateway logs.",
+            }]
+
+        instances = feature.get("instances")
+        if isinstance(instances, list):
+            by_instance = {
+                str(status.get("instance_id", "default")): status
+                for status in owner_statuses
+            }
+            decorated_instances = []
+            for original_instance in instances:
+                instance = dict(original_instance)
+                desired_instance = bool(instance.get("enabled"))
+                status = by_instance.get(str(instance.get("id", "default")))
+                if desired_instance and status is None:
+                    status = {
+                        "state": "failed",
+                        "running": False,
+                        "error": "Enabled channel instance has no runtime. Check gateway logs.",
+                    }
+                    owner_statuses.append(status)
+                state = str(status.get("state", "stopped")) if status else "stopped"
+                instance["runtime_status"] = state
+                instance["running"] = state == "running"
+                if status and status.get("error"):
+                    instance["runtime_error"] = str(status["error"])
+                decorated_instances.append(instance)
+            feature["instances"] = decorated_instances
+
+        state = _combined_channel_runtime_state(owner_statuses, desired_enabled)
+        feature["runtime_status"] = state
+        feature["running"] = state == "running"
+        feature["ready"] = state == "running"
+        feature["status"] = "enabled" if state == "running" else state
+        error = next(
+            (
+                str(status["error"])
+                for status in owner_statuses
+                if status.get("error")
+            ),
+            None,
+        )
+        if error:
+            feature["runtime_error"] = error
+        features.append(feature)
+
+    decorated = dict(payload)
+    decorated["features"] = features
+    decorated["enabled_count"] = sum(
+        1
+        for feature in features
+        if (
+            feature.get("running")
+            if feature.get("type") == "channel"
+            else feature.get("enabled")
+        )
+    )
+    return decorated
+
+
+def _combined_channel_runtime_state(
+    statuses: list[dict[str, Any]],
+    desired_enabled: bool,
+) -> str:
+    if not desired_enabled:
+        return "stopped"
+    states = {str(status.get("state", "stopped")) for status in statuses}
+    if "failed" in states:
+        return "failed"
+    if "running" in states:
+        return "running"
+    if "starting" in states:
+        return "starting"
+    return "stopped"
+
+
 def enable_optional_feature(
     name: str,
     *,
@@ -548,8 +655,8 @@ def enable_optional_feature(
         raise OptionalFeatureError(f"Unknown feature: {name}. Available: {available}", status=404)
 
     channel_plugin = channel_plugins.get(name)
-    extra_name = channel_plugin.optional_extra if channel_plugin else name
-    if extra_name in extras and not extra_installed(extra_name, extras[extra_name]):
+    dependencies = _feature_dependencies(name, channel_plugin, extras)
+    if dependencies and not extra_installed(name, dependencies):
         if not allow_install:
             raise OptionalFeatureError(
                 "Installing optional features from a remote WebUI is disabled. "
@@ -557,8 +664,8 @@ def enable_optional_feature(
                 status=403,
             )
         result = install_extra(
-            extra_name,
-            extras[extra_name],
+            name,
+            dependencies,
             runner=runner,
         )
         if not result.ok:
@@ -611,6 +718,33 @@ def enable_optional_feature(
         is_channel=channel_plugin is not None,
     )
     return payload
+
+
+def ensure_enabled_channel_dependencies(
+    enabled_names: set[str],
+    plugins: dict[str, Any],
+    *,
+    runner: Any = run_install_command,
+) -> dict[str, str]:
+    """Install requirements declared by enabled channel manifests.
+
+    Returns user-safe errors keyed by channel name. Detailed installer output
+    remains in gateway logs.
+    """
+    failures: dict[str, str] = {}
+    for name in sorted(enabled_names):
+        plugin = plugins.get(name)
+        if plugin is None:
+            continue
+        dependencies = list(plugin.dependencies)
+        if not dependencies or extra_installed(name, dependencies):
+            continue
+        result = install_extra(name, dependencies, runner=runner)
+        if result.ok and extra_installed(name, dependencies):
+            continue
+        failures[name] = "Channel dependencies could not be installed. Check gateway logs."
+        logger.error("Could not prepare dependencies for enabled channel '{}'", name)
+    return failures
 
 
 def _feature_requires_restart(name: str, *, is_channel: bool) -> bool:

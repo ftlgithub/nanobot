@@ -15,6 +15,7 @@ If a matching config section has `"enabled": true`, the channel is instantiated 
 | Concern | Owner and source of truth |
 |---------|---------------------------|
 | Runtime behavior and platform SDK use | `runtime.py` and package-local helpers |
+| Python package requirements | `ChannelPlugin.dependencies` in `manifest.py` |
 | Writable settings fields, types, defaults, requirements, secret handling, and validation | `ChannelPlugin.setup` in `manifest.py` |
 | Persisted config expansion, instance updates, and runtime naming | `ChannelPlugin.management` backed by a dependency-free module |
 | Interactive setup connections and their short-lived state | `ChannelPlugin.connector` backed by package-local `connect.py` |
@@ -58,6 +59,7 @@ PLUGIN = ChannelPlugin(
     name="webhook",
     display_name="Webhook",
     runtime=f"{__package__}.runtime:WebhookChannel",
+    dependencies=("aiohttp>=3.9.0,<4.0.0",),
     setup=ChannelSetupSpec(
         fields={
             "port": ChannelFieldSpec(kind="int", default=9000),
@@ -162,7 +164,7 @@ class WebhookChannel(BaseChannel):
 
 The package directory, `PLUGIN.name`, runtime class name, and config section must all use `webhook`. Channel names use a portable ASCII package identifier: they start with a letter and contain only letters, digits, or underscores.
 
-If the runtime needs an optional dependency, add an extra to nanobot's `pyproject.toml` and set `ChannelPlugin.optional_extra` to that extra's name. Keep the manifest and anything it imports free of the optional SDK.
+Declare runtime requirements directly in `ChannelPlugin.dependencies`. Do not add channel requirements to the root `pyproject.toml`: the package manifest is the source of truth used by the CLI, WebUI, and gateway startup. Keep the manifest and anything it imports free of the optional SDK itself.
 
 ### 2. Configure
 
@@ -185,7 +187,7 @@ Edit `~/.nanobot/config.json`:
 }
 ```
 
-nanobot always loads the dependency-free descriptor during discovery but imports the runtime target only when starting or enabling a channel, or when performing an explicit runtime-only action such as metadata refresh. Status, configuration, and disable operations do not need the runtime; enable uses the descriptor adapter to persist state after the runtime is available. Single-instance and multi-instance channels use the same activation rules.
+nanobot always loads the dependency-free descriptor during discovery. When the WebUI gateway starts, it installs missing requirements for enabled channels before importing their runtimes. It also installs them when a channel is enabled from the CLI or WebUI. Status, configuration, and disable operations do not need the runtime. Single-instance and multi-instance channels use the same activation rules.
 
 ### 3. Run & Test
 

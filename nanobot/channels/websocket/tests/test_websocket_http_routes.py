@@ -78,6 +78,7 @@ def _make_handler(
     cron_pending_job_ids: Any | None = None,
     local_trigger_pending_ids: Any | None = None,
     channel_feature_action: Any | None = None,
+    channel_runtime_status: Any | None = None,
 ) -> GatewayServices:
     config = WebSocketConfig.model_validate(cfg) if isinstance(cfg, dict) else cfg
     workspace = workspace_path or Path.cwd()
@@ -96,6 +97,7 @@ def _make_handler(
         cron_pending_job_ids=cron_pending_job_ids,
         local_trigger_pending_ids=local_trigger_pending_ids,
         channel_feature_action=channel_feature_action,
+        channel_runtime_status=channel_runtime_status,
     )
 
 
@@ -112,6 +114,7 @@ def _ch(
     cron_pending_job_ids: Any | None = None,
     local_trigger_pending_ids: Any | None = None,
     channel_feature_action: Any | None = None,
+    channel_runtime_status: Any | None = None,
     **extra: Any,
 ) -> WebSocketChannel:
     cfg: dict[str, Any] = {
@@ -134,6 +137,7 @@ def _ch(
         cron_pending_job_ids=cron_pending_job_ids,
         local_trigger_pending_ids=local_trigger_pending_ids,
         channel_feature_action=channel_feature_action,
+        channel_runtime_status=channel_runtime_status,
     )
     return InProcessHttpChannel(cfg, bus, gateway=gateway)
 
@@ -180,7 +184,7 @@ def _stub_matrix_feature(
         name="matrix",
         display_name="Matrix",
         runtime=f"{__name__}:_MatrixChannel",
-        optional_extra="matrix",
+        dependencies=("matrix-nio>=0.25.2",),
     )
     plugins = {"matrix": matrix}
     if "websocket" in requested:
@@ -668,6 +672,60 @@ async def test_nanobot_feature_routes_require_token_and_enable(
         assert json.loads(config_path.read_text(encoding="utf-8"))["channels"]["matrix"][
             "enabled"
         ] is False
+    finally:
+        await channel.stop()
+        await server_task
+
+
+@pytest.mark.asyncio
+async def test_nanobot_feature_route_reports_live_channel_failure(
+    bus: MagicMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({"channels": {"matrix": {"enabled": True}}}),
+        encoding="utf-8",
+    )
+    _stub_matrix_feature(monkeypatch, config_path, channels=["matrix", "websocket"])
+    channel = _ch(
+        bus,
+        session_manager=_seed_session(tmp_path),
+        port=29946,
+        channel_runtime_status=lambda: {
+            "websocket": {
+                "owner": "websocket",
+                "instance_id": "default",
+                "state": "running",
+                "running": True,
+            },
+            "matrix": {
+                "owner": "matrix",
+                "instance_id": "default",
+                "state": "failed",
+                "running": False,
+                "error": "Channel failed to start. Check gateway logs.",
+            },
+        },
+    )
+    server_task = asyncio.create_task(channel.start())
+    try:
+        token = channel.gateway.tokens.issue_api_token(300)
+        response = await _http_get(
+            "http://127.0.0.1:29946/api/settings/nanobot-features",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        matrix = next(feature for feature in body["features"] if feature["name"] == "matrix")
+        assert matrix["enabled"] is True
+        assert matrix["running"] is False
+        assert matrix["ready"] is False
+        assert matrix["runtime_status"] == "failed"
+        assert matrix["runtime_error"] == "Channel failed to start. Check gateway logs."
+        assert body["enabled_count"] == 1
     finally:
         await channel.stop()
         await server_task

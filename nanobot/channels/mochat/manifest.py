@@ -22,6 +22,9 @@ PLUGIN = ChannelPlugin(
     display_name="MoChat",
     runtime=f"{__package__}.runtime:MochatChannel",
     setup=SETUP_SPEC,
-    optional_extra="mochat",
+    dependencies=(
+        "python-socketio>=5.16.0,<6.0.0",
+        "msgpack>=1.1.0,<2.0.0",
+    ),
     settings_visible=False,
 )

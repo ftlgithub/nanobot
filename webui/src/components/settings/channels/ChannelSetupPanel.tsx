@@ -23,11 +23,13 @@ import {
 } from "@/components/settings/channels/CredentialForm";
 import {
   ChannelLogo,
+  ChannelRuntimeError,
   ChannelStatusBadge,
   channelDescription,
   channelRequirements,
   channelSetup,
   channelStatusLabel,
+  channelToggleChecked,
   localizedChannelDisplayName,
 } from "@/components/settings/channels/ChannelIdentity";
 import {
@@ -94,7 +96,9 @@ export function ChannelCatalogRow({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <ChannelStatusBadge>{channelStatusLabel(feature, tx)}</ChannelStatusBadge>
+        <ChannelStatusBadge status={feature.runtime_status}>
+          {channelStatusLabel(feature, tx)}
+        </ChannelStatusBadge>
         <ChevronRight
           className={cn(
             "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
@@ -158,7 +162,7 @@ export function ChannelSetupPanel({
   const disableBusy = actionKey === `disable:${feature.name}`;
   const missingSupport = feature.enabled && !feature.installed;
   const alwaysEnabled = feature.capabilities?.includes("always_enabled") ?? false;
-  const channelChecked = alwaysEnabled || feature.enabled;
+  const channelChecked = alwaysEnabled || channelToggleChecked(feature);
   const channelBusy = enableBusy || disableBusy;
   const setup = channelSetup(feature, i18n.resolvedLanguage ?? i18n.language);
   const needsSetupBeforeEnable =
@@ -208,7 +212,9 @@ export function ChannelSetupPanel({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-1">
-          <ChannelStatusBadge>{channelStatusLabel(feature, tx)}</ChannelStatusBadge>
+          <ChannelStatusBadge status={feature.runtime_status}>
+            {channelStatusLabel(feature, tx)}
+          </ChannelStatusBadge>
           {channelBusy ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-hidden />
           ) : null}
@@ -232,6 +238,8 @@ export function ChannelSetupPanel({
           />
         </div>
       </div>
+
+      <ChannelRuntimeError message={feature.runtime_error} className="mt-4" />
 
       <ChannelSetupSurface
         token={token}
@@ -384,7 +392,7 @@ function ChannelSetupSurface({
     }
   };
 
-  const primaryActionLabel = feature.enabled
+  const primaryActionLabel = channelToggleChecked(feature)
     ? tx("settings.channels.checkConnection", "Check connection")
     : tx("settings.channels.checkAndEnable", "Check and enable");
 

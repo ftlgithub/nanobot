@@ -33,6 +33,7 @@ from nanobot.optional_features import (
     OptionalFeatureError,
     extra_installed,
     optional_dependency_groups,
+    with_channel_runtime_status,
 )
 from nanobot.pairing import approve_code, deny_code, list_pending
 from nanobot.webui.cli_apps_api import cli_apps_action, cli_apps_payload
@@ -113,6 +114,7 @@ class WebUISettingsRouter:
         runtime_surface: str,
         runtime_capabilities: dict[str, Any],
         channel_feature_action: Callable[..., Any] | None = None,
+        channel_runtime_status: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self.bus = bus
         self.logger = logger
@@ -123,6 +125,7 @@ class WebUISettingsRouter:
         self._runtime_surface = runtime_surface
         self._runtime_capabilities = runtime_capabilities
         self._channel_feature_action = channel_feature_action
+        self._channel_runtime_status = channel_runtime_status
         self._restart_sections: set[str] = set()
         self._channel_connectors: dict[str, Any] = {}
 
@@ -587,7 +590,7 @@ class WebUISettingsRouter:
         except Exception:
             self.logger.exception("failed to load nanobot features")
             return self._error_response(500, "failed to load nanobot features")
-        return self._json_response(payload)
+        return self._json_response(self._with_channel_runtime_status(payload))
 
     async def _handle_settings_nanobot_features_action(
         self,
@@ -618,7 +621,17 @@ class WebUISettingsRouter:
             self._query(request),
             payload,
         )
+        payload = self._with_channel_runtime_status(payload)
         return self._json_response(self._with_restart_state(payload, section="runtime"))
+
+    def _with_channel_runtime_status(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self._channel_runtime_status is None:
+            return payload
+        try:
+            return with_channel_runtime_status(payload, self._channel_runtime_status())
+        except Exception:
+            self.logger.exception("failed to load channel runtime status")
+            return payload
 
     async def _apply_nanobot_feature_runtime_change(
         self,
@@ -663,6 +676,8 @@ class WebUISettingsRouter:
             else:
                 last_action["message"] = message
             last_action["hot_reload"] = not payload["requires_restart"]
+            if "ok" in result:
+                last_action["ok"] = bool(result["ok"])
             payload["last_action"] = last_action
         return payload
 
@@ -708,6 +723,7 @@ class WebUISettingsRouter:
         }
         if not enable:
             features = await asyncio.to_thread(nanobot_features_payload)
+            features = self._with_channel_runtime_status(features)
             payload["nanobot_features"] = self._with_restart_state(features, section="runtime")
             return self._json_response(payload)
 
@@ -733,6 +749,7 @@ class WebUISettingsRouter:
             feature_query,
             features,
         )
+        features = self._with_channel_runtime_status(features)
         payload["nanobot_features"] = self._with_restart_state(features, section="runtime")
         return self._json_response(payload)
 
@@ -964,6 +981,7 @@ class WebUISettingsRouter:
                 target,
                 features,
             )
+        features = self._with_channel_runtime_status(features)
         payload = dict(payload)
         payload["nanobot_features"] = self._with_restart_state(features, section="runtime")
         return payload

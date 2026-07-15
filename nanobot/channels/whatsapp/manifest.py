@@ -27,6 +27,9 @@ PLUGIN = ChannelPlugin(
     runtime=f"{__package__}.runtime:WhatsAppChannel",
     setup=SETUP_SPEC,
     management=ChannelManagementSpec(local_state_present=local_state_present),
-    optional_extra="whatsapp",
+    dependencies=(
+        "neonize>=0.3.18.post0,<0.4.0",
+        "segno>=1.6.1,<2.0.0",
+    ),
     webui="webui/index.ts",
 )

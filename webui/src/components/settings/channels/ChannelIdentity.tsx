@@ -17,7 +17,7 @@ import type {
 import { useLogoFallback } from "@/hooks/useLogoFallback";
 import { normalizeLocale } from "@/i18n/config";
 import { logoFallbackUrls } from "@/lib/provider-brand";
-import type { NanobotFeatureInfo } from "@/lib/types";
+import type { ChannelRuntimeStatus, NanobotFeatureInfo } from "@/lib/types";
 
 export type ChannelFilter = "all" | "on" | "off";
 
@@ -200,16 +200,31 @@ export function channelRequirements(feature: NanobotFeatureInfo, t: ReturnType<t
 }
 
 export function channelMatchesFilter(feature: NanobotFeatureInfo, filter: ChannelFilter): boolean {
-  if (filter === "on") return feature.enabled;
-  if (filter === "off") return !feature.enabled;
+  if (filter === "on") return channelIsRunning(feature);
+  if (filter === "off") return !channelIsRunning(feature);
   return true;
+}
+
+export function channelIsRunning(feature: NanobotFeatureInfo): boolean {
+  return feature.runtime_status === "running";
+}
+
+export function channelToggleChecked(feature: NanobotFeatureInfo): boolean {
+  return feature.runtime_status === "running" || feature.runtime_status === "starting";
 }
 
 export function channelStatusLabel(
   feature: NanobotFeatureInfo,
   tx: (key: string, fallback: string) => string,
 ): string {
-  if (feature.enabled) return tx("settings.values.on", "On");
+  if (feature.runtime_status === "failed") {
+    return tx("settings.channels.runtimeFailed", "Failed");
+  }
+  if (feature.runtime_status === "starting") {
+    return tx("settings.channels.runtimeStarting", "Starting");
+  }
+  if (channelIsRunning(feature)) return tx("settings.values.on", "On");
+  if (feature.enabled) return tx("settings.channels.runtimeStopped", "Not running");
   return tx("settings.values.off", "Off");
 }
 
@@ -231,10 +246,38 @@ export function channelSearchText(
 }
 
 
-export function ChannelStatusBadge({ children }: { children: ReactNode }) {
+export function ChannelStatusBadge({
+  children,
+  status,
+}: {
+  children: ReactNode;
+  status?: ChannelRuntimeStatus;
+}) {
   return (
-    <span className="shrink-0 rounded-full bg-muted/75 px-2 py-0.5 text-[11px] font-medium leading-4 text-muted-foreground">
+    <span className={[
+      "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium leading-4",
+      status === "failed"
+        ? "bg-destructive/10 text-destructive"
+        : status === "running"
+          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-200"
+          : "bg-muted/75 text-muted-foreground",
+    ].join(" ")}>
       {children}
     </span>
+  );
+}
+
+export function ChannelRuntimeError({
+  message,
+  className = "mt-3",
+}: {
+  message?: string;
+  className?: string;
+}) {
+  if (!message) return null;
+  return (
+    <div className={`${className} rounded-[12px] border border-destructive/20 bg-destructive/5 px-3 py-2 text-[12px] leading-5 text-destructive`}>
+      {message}
+    </div>
   );
 }

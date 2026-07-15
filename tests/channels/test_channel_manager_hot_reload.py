@@ -170,7 +170,8 @@ async def test_apply_channel_feature_action_keeps_running_channel_when_rebuild_f
 
     result = await manager.apply_channel_feature_action("enable", "hot")
 
-    assert result["requires_restart"] is True
+    assert result["requires_restart"] is False
+    assert result["ok"] is False
     assert manager.channels["hot"] is old_channel
     assert old_channel.is_running is True
     assert not old_channel.stopped.is_set()

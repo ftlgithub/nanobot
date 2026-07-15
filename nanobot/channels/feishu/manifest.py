@@ -37,6 +37,6 @@ PLUGIN = ChannelPlugin(
     connector=f"{__package__}.connect:FeishuConnectStore",
     setup=SETUP_SPEC,
     management=FEISHU_MANAGEMENT,
-    optional_extra="feishu",
+    dependencies=("lark-oapi>=1.5.0,<2.0.0",),
     webui="webui/index.tsx",
 )

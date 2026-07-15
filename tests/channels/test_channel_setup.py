@@ -191,7 +191,7 @@ def test_feishu_package_manifest_owns_runtime_and_webui_metadata() -> None:
 
     assert plugin is not None
     assert plugin.runtime == "nanobot.channels.feishu.runtime:FeishuChannel"
-    assert plugin.optional_extra == "feishu"
+    assert plugin.dependencies == ("lark-oapi>=1.5.0,<2.0.0",)
     assert plugin.connector == "nanobot.channels.feishu.connect:FeishuConnectStore"
     assert plugin.management.multi_instance is True
     assert plugin.webui == "webui/index.tsx"
@@ -202,7 +202,7 @@ def test_weixin_package_manifest_owns_runtime_and_webui_metadata() -> None:
 
     assert plugin is not None
     assert plugin.runtime == "nanobot.channels.weixin.runtime:WeixinChannel"
-    assert plugin.optional_extra == "weixin"
+    assert plugin.dependencies == ("qrcode[pil]>=8.0", "pycryptodome>=3.20.0")
     assert plugin.connector == "nanobot.channels.weixin.connect:WeixinConnectStore"
     assert plugin.webui == "webui/index.tsx"
 

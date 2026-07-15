@@ -21,6 +21,10 @@ PLUGIN = ChannelPlugin(
     display_name="Slack",
     runtime=f"{__package__}.runtime:SlackChannel",
     setup=SETUP_SPEC,
-    optional_extra="slack",
+    dependencies=(
+        "aiohttp>=3.9.0,<4.0.0",
+        "slack-sdk>=3.39.0,<4.0.0",
+        "slackify-markdown>=0.2.0,<1.0.0",
+    ),
     webui="webui/index.ts",
 )

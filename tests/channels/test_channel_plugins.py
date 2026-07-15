@@ -150,7 +150,7 @@ def _channel_plugin(
     channel_cls: type[BaseChannel],
     *,
     setup: ChannelSetupSpec | None = None,
-    optional_extra: str | None = None,
+    dependencies: tuple[str, ...] = (),
     default_enabled: bool = False,
     management: ChannelManagementSpec | None = None,
 ) -> ChannelPlugin:
@@ -171,7 +171,7 @@ def _channel_plugin(
         runtime=f"{__name__}:{runtime_attr}",
         setup=setup,
         management=management,
-        optional_extra=optional_extra,
+        dependencies=dependencies,
         default_enabled=default_enabled,
     )
 
@@ -226,7 +226,12 @@ def _stub_optional_feature_cli(
 ) -> None:
     plugins = []
     if channel_cls is not None:
-        plugins.append(_channel_plugin(channel_cls, optional_extra=channel_cls.name))
+        plugins.append(
+            _channel_plugin(
+                channel_cls,
+                dependencies=tuple(extras.get(channel_cls.name) or ()),
+            )
+        )
     assert not channels or {plugin.name for plugin in plugins} == set(channels)
     _stub_channel_registry(monkeypatch, *plugins)
     monkeypatch.setattr("nanobot.optional_features.optional_dependency_groups", lambda: extras)
@@ -780,6 +785,23 @@ def test_discover_plugins_skips_names_outside_enabled_set():
     assert loaded == []
 
 
+def test_channel_manifest_rejects_invalid_dependency_metadata():
+    with pytest.raises(TypeError, match="tuple of requirements"):
+        ChannelPlugin(
+            name="broken",
+            display_name="Broken",
+            runtime="broken.runtime:BrokenChannel",
+            dependencies=["broken-sdk>=1"],  # type: ignore[arg-type]
+        )
+    with pytest.raises(ValueError, match="valid requirement"):
+        ChannelPlugin(
+            name="broken",
+            display_name="Broken",
+            runtime="broken.runtime:BrokenChannel",
+            dependencies=("not a requirement ???",),
+        )
+
+
 def test_discover_plugins_handles_load_error():
     from nanobot.channels.registry import discover_plugins
 
@@ -883,6 +905,77 @@ def test_manager_loads_plugin_from_dict_config(monkeypatch):
 
     assert "fakeplugin" in mgr.channels
     assert isinstance(mgr.channels["fakeplugin"], _FakePlugin)
+
+
+def test_manager_installs_manifest_dependencies_before_loading_enabled_channel(monkeypatch):
+    from nanobot.optional_features import InstallResult
+
+    plugin = _channel_plugin(
+        _FakePlugin,
+        dependencies=("fake-sdk>=1",),
+    )
+    _stub_channel_registry(monkeypatch, plugin)
+    installed = False
+    installs: list[tuple[str, list[str]]] = []
+
+    def extra_installed(_name: str, _dependencies: list[str] | None) -> bool:
+        return installed
+
+    def install_extra(name: str, dependencies: list[str], *, runner):
+        nonlocal installed
+        installs.append((name, dependencies))
+        installed = True
+        return InstallResult(True, name, ["pip"])
+
+    monkeypatch.setattr("nanobot.optional_features.extra_installed", extra_installed)
+    monkeypatch.setattr("nanobot.optional_features.install_extra", install_extra)
+    config = Config.model_validate({
+        "channels": {
+            "websocket": {"enabled": False},
+            "fakeplugin": {"enabled": True},
+        }
+    })
+
+    manager = ChannelManager(config, MessageBus())
+
+    assert installs == [("fakeplugin", ["fake-sdk>=1"])]
+    assert "fakeplugin" in manager.channels
+
+
+def test_manager_reports_dependency_install_failure_as_runtime_failure(monkeypatch):
+    from nanobot.optional_features import InstallResult
+
+    plugin = _channel_plugin(
+        _FakePlugin,
+        dependencies=("fake-sdk>=1",),
+    )
+    _stub_channel_registry(monkeypatch, plugin)
+    monkeypatch.setattr(
+        "nanobot.optional_features.extra_installed",
+        lambda _name, _dependencies: False,
+    )
+    monkeypatch.setattr(
+        "nanobot.optional_features.install_extra",
+        lambda name, _dependencies, *, runner: InstallResult(False, name, ["pip"]),
+    )
+    config = Config.model_validate({
+        "channels": {
+            "websocket": {"enabled": False},
+            "fakeplugin": {"enabled": True},
+        }
+    })
+
+    manager = ChannelManager(config, MessageBus())
+
+    assert manager.channels == {}
+    assert manager.get_status()["fakeplugin"] == {
+        "enabled": True,
+        "running": False,
+        "state": "failed",
+        "owner": "fakeplugin",
+        "instance_id": "default",
+        "error": "Channel dependencies could not be installed. Check gateway logs.",
+    }
 
 
 def test_manager_loads_websocket_from_default_config():
@@ -1685,6 +1778,46 @@ def test_optional_features_payload_counts_enabled_channel_with_missing_dependenc
     assert payload["enabled_count"] == 1
 
 
+def test_live_runtime_status_overrides_enabled_configuration_for_webui():
+    from nanobot.optional_features import with_channel_runtime_status
+
+    payload = {
+        "features": [{
+            "name": "feishu",
+            "type": "channel",
+            "enabled": True,
+            "ready": True,
+            "status": "enabled",
+            "instances": [{
+                "id": "default",
+                "enabled": True,
+                "configured": True,
+            }],
+        }],
+        "enabled_count": 1,
+    }
+    runtime_status = {
+        "feishu": {
+            "owner": "feishu",
+            "instance_id": "default",
+            "state": "failed",
+            "running": False,
+            "error": "Channel failed to start. Check gateway logs.",
+        }
+    }
+
+    decorated = with_channel_runtime_status(payload, runtime_status)
+
+    feature = decorated["features"][0]
+    assert feature["enabled"] is True  # desired config remains visible to actions
+    assert feature["running"] is False
+    assert feature["ready"] is False
+    assert feature["runtime_status"] == "failed"
+    assert feature["runtime_error"] == "Channel failed to start. Check gateway logs."
+    assert feature["instances"][0]["runtime_status"] == "failed"
+    assert decorated["enabled_count"] == 0
+
+
 def test_package_manifest_metadata_drives_optional_feature_payload(monkeypatch):
     from nanobot.optional_features import optional_features_payload
 
@@ -1692,7 +1825,7 @@ def test_package_manifest_metadata_drives_optional_feature_payload(monkeypatch):
         name="demo",
         display_name="Demo Chat",
         runtime="demo.runtime:DemoChannel",
-        optional_extra="demo-sdk",
+        dependencies=("demo-sdk>=1",),
         default_enabled=True,
         capabilities=frozenset({"custom_ui"}),
         webui="webui/entry.tsx",
@@ -1703,7 +1836,7 @@ def test_package_manifest_metadata_drives_optional_feature_payload(monkeypatch):
     _stub_channel_registry(monkeypatch, plugin)
     monkeypatch.setattr(
         "nanobot.optional_features.optional_dependency_groups",
-        lambda: {"demo-sdk": ["demo-sdk>=1"]},
+        lambda: {},
     )
 
     def record_extra(extra: str, deps: list[str] | None) -> bool:
@@ -1715,7 +1848,7 @@ def test_package_manifest_metadata_drives_optional_feature_payload(monkeypatch):
     payload = optional_features_payload(config=config)
 
     demo = next(feature for feature in payload["features"] if feature["name"] == "demo")
-    assert checked_extras == [("demo-sdk", ["demo-sdk>=1"])]
+    assert checked_extras == [("demo", ["demo-sdk>=1"])]
     assert demo["display_name"] == "Demo Chat"
     assert demo["capabilities"] == ["custom_ui"]
     assert demo["webui"] == "webui/entry.tsx"
@@ -2112,11 +2245,11 @@ def test_enable_bootstraps_pip_with_ensurepip(monkeypatch):
             return subprocess.CompletedProcess(argv, 1, stdout="", stderr="No module named pip")
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
-    assert optional_features.install_extra("weixin", None, runner=_run).ok is True
+    assert optional_features.install_extra("bedrock", None, runner=_run).ok is True
     assert calls == [
-        [sys.executable, "-m", "pip", "install", "nanobot-ai[weixin]"],
+        [sys.executable, "-m", "pip", "install", "nanobot-ai[bedrock]"],
         [sys.executable, "-m", "ensurepip", "--upgrade"],
-        [sys.executable, "-m", "pip", "install", "nanobot-ai[weixin]"],
+        [sys.executable, "-m", "pip", "install", "nanobot-ai[bedrock]"],
     ]
 
 
@@ -2159,6 +2292,7 @@ def test_run_install_command_returns_failure_on_timeout(monkeypatch):
 
 def test_optional_dependency_metadata_for_enable():
     from nanobot import optional_features
+    from nanobot.channels.plugin import load_channel_package
 
     data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     deps = data["project"]["optional-dependencies"]
@@ -2187,7 +2321,6 @@ def test_optional_dependency_metadata_for_enable():
         "python-pptx>=1.0.0,<2.0.0",
     ):
         assert dependency in required
-    assert deps["dingtalk"] == ["dingtalk-stream>=0.24.0,<1.0.0"]
     assert deps["documents"] == [
         "defusedxml>=0.7.1,<1.0.0",
         "pypdf>=5.0.0,<6.0.0",
@@ -2196,28 +2329,69 @@ def test_optional_dependency_metadata_for_enable():
         "python-pptx>=1.0.0,<2.0.0",
     ]
     assert deps["pdf"] == ["pypdf>=5.0.0,<6.0.0"]
-    assert deps["feishu"] == ["lark-oapi>=1.5.0,<2.0.0"]
     assert deps["langfuse"] == ["langfuse>=3.0.0,<4.0.0"]
-    assert deps["mochat"] == [
-        "python-socketio>=5.16.0,<6.0.0",
-        "msgpack>=1.1.0,<2.0.0",
-    ]
-    assert deps["napcat"] == ["aiohttp>=3.9.0,<4.0.0"]
-    assert deps["qq"] == ["aiohttp>=3.9.0,<4.0.0", "qq-botpy>=1.2.0,<2.0.0"]
-    assert deps["slack"] == [
-        "aiohttp>=3.9.0,<4.0.0",
-        "slack-sdk>=3.39.0,<4.0.0",
-        "slackify-markdown>=0.2.0,<1.0.0",
-    ]
+    channel_names = {
+        "dingtalk",
+        "discord",
+        "feishu",
+        "matrix",
+        "mochat",
+        "msteams",
+        "napcat",
+        "qq",
+        "slack",
+        "telegram",
+        "wecom",
+        "weixin",
+        "whatsapp",
+    }
+    assert channel_names.isdisjoint(deps)
+    expected_channel_dependencies = {
+        "dingtalk": ("dingtalk-stream>=0.24.0,<1.0.0",),
+        "discord": ("discord.py>=2.5.2,<3.0.0",),
+        "feishu": ("lark-oapi>=1.5.0,<2.0.0",),
+        "matrix": (
+            "matrix-nio[e2e]>=0.25.2; sys_platform != 'win32'",
+            "matrix-nio>=0.25.2; sys_platform == 'win32'",
+            "aiohttp>=3.9.0,<4.0.0",
+            "mistune>=3.0.0,<4.0.0",
+            "nh3>=0.2.17,<1.0.0",
+        ),
+        "mochat": (
+            "python-socketio>=5.16.0,<6.0.0",
+            "msgpack>=1.1.0,<2.0.0",
+        ),
+        "msteams": ("PyJWT>=2.0,<3.0", "cryptography>=41.0"),
+        "napcat": ("aiohttp>=3.9.0,<4.0.0",),
+        "qq": (
+            "aiohttp>=3.9.0,<4.0.0",
+            "qq-botpy>=1.2.0,<2.0.0",
+        ),
+        "slack": (
+            "aiohttp>=3.9.0,<4.0.0",
+            "slack-sdk>=3.39.0,<4.0.0",
+            "slackify-markdown>=0.2.0,<1.0.0",
+        ),
+        "telegram": (
+            "python-telegram-bot[socks,webhooks]>=22.6,<23.0",
+            "socksio>=1.0.0,<2.0.0",
+            "python-socks[asyncio]>=2.8.0,<3.0.0; sys_platform != 'win32'",
+        ),
+        "wecom": ("wecom-aibot-sdk-python>=0.1.5",),
+        "weixin": ("qrcode[pil]>=8.0", "pycryptodome>=3.20.0"),
+        "whatsapp": (
+            "neonize>=0.3.18.post0,<0.4.0",
+            "segno>=1.6.1,<2.0.0",
+        ),
+    }
+    for name, expected in expected_channel_dependencies.items():
+        plugin = load_channel_package(name)
+        assert plugin is not None
+        assert plugin.dependencies == expected
 
     visible = optional_features.optional_dependency_groups()
     assert "documents" not in visible
     assert "pdf" not in visible
-    assert any(dep.startswith("python-telegram-bot") for dep in deps["telegram"])
-    assert any(
-        dep.startswith("matrix-nio>=0.25.2") and "sys_platform == 'win32'" in dep
-        for dep in deps["matrix"]
-    )
 
 
 def test_optional_dependency_groups_falls_back_to_package_metadata(monkeypatch):

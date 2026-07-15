@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { channelSetup } from "@/components/settings/channels/ChannelIdentity";
+import {
+  channelIsRunning,
+  channelSetup,
+  channelStatusLabel,
+  channelToggleChecked,
+} from "@/components/settings/channels/ChannelIdentity";
 import type { NanobotFeatureInfo } from "@/lib/types";
 
 function feature(overrides: Partial<NanobotFeatureInfo>): NanobotFeatureInfo {
@@ -121,5 +126,21 @@ describe("channelSetup", () => {
       key: "channels.dingtalk.allowFrom",
       label: "允许的用户",
     }));
+  });
+});
+
+describe("channel runtime state", () => {
+  const tx = (_key: string, fallback: string) => fallback;
+
+  it("only reports a channel on when the runtime is explicitly running", () => {
+    const running = feature({ enabled: true, runtime_status: "running" });
+    const unknown = feature({ enabled: true });
+
+    expect(channelIsRunning(running)).toBe(true);
+    expect(channelToggleChecked(running)).toBe(true);
+    expect(channelStatusLabel(running, tx)).toBe("On");
+    expect(channelIsRunning(unknown)).toBe(false);
+    expect(channelToggleChecked(unknown)).toBe(false);
+    expect(channelStatusLabel(unknown, tx)).toBe("Not running");
   });
 });

@@ -14,6 +14,7 @@ import {
 } from "@/components/settings/channels/CredentialForm";
 import {
   ChannelLogo,
+  ChannelRuntimeError,
   ChannelStatusBadge,
   channelSetup,
   channelStatusLabel,
@@ -39,7 +40,7 @@ import type {
 import { cn } from "@/lib/utils";
 
 export type ChannelInstancesPanelCustomization = {
-  countLabel?: (configuredCount: number) => string;
+  countLabel?: (runningCount: number) => string;
   toggleAriaLabel?: (instance: NanobotChannelInstanceInfo) => string;
   configuredLabel?: string;
   needsSetupLabel?: string;
@@ -87,6 +88,7 @@ export function ChannelInstancesPanel({
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
   const [savingFields, setSavingFields] = useState(false);
   const configuredCount = instances.filter((instance) => instance.configured).length;
+  const runningCount = instances.filter((instance) => instance.runtime_status === "running").length;
   const selectedValuesKey = JSON.stringify(selected?.config_values ?? {});
   const selectedConfiguredFields = useMemo(
     () => new Set(selected?.configured_fields ?? []),
@@ -151,7 +153,7 @@ export function ChannelInstancesPanel({
               {displayName}
             </h3>
             <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
-              {customization.countLabel?.(configuredCount)
+              {customization.countLabel?.(runningCount)
                 ?? t("settings.channels.configuredInstances", {
                   count: configuredCount,
                   defaultValue: `${configuredCount} instances configured`,
@@ -160,9 +162,13 @@ export function ChannelInstancesPanel({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <ChannelStatusBadge>{channelStatusLabel(feature, tx)}</ChannelStatusBadge>
+          <ChannelStatusBadge status={feature.runtime_status}>
+            {channelStatusLabel(feature, tx)}
+          </ChannelStatusBadge>
         </div>
       </div>
+
+      <ChannelRuntimeError message={feature.runtime_error} />
 
       <div className="mt-5 space-y-3">
         {instances.map((instance) => {
@@ -207,7 +213,7 @@ export function ChannelInstancesPanel({
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-hidden />
                   ) : null}
                   <ToggleButton
-                    checked={instance.enabled}
+                    checked={instanceToggleChecked(instance)}
                     disabled={
                       busyInstanceId === instance.id
                       || !instance.configured
@@ -217,7 +223,7 @@ export function ChannelInstancesPanel({
                         name: channelInstanceDisplayName(instance),
                         defaultValue: "{{name}} instance",
                       })}
-                    label={instance.enabled ? tx("settings.values.on", "On") : tx("settings.values.off", "Off")}
+                    label={instanceToggleChecked(instance) ? tx("settings.values.on", "On") : tx("settings.values.off", "Off")}
                     onChange={(checked) => void toggleInstance(instance, checked)}
                   />
                 </div>
@@ -323,6 +329,10 @@ function channelInstanceDisplayName(instance: NanobotChannelInstanceInfo): strin
   return instance.id;
 }
 
+function instanceToggleChecked(instance: NanobotChannelInstanceInfo): boolean {
+  return instance.runtime_status === "running" || instance.runtime_status === "starting";
+}
+
 function ChannelInstanceStatusBadge({
   instance,
   configuredLabel,
@@ -333,10 +343,22 @@ function ChannelInstanceStatusBadge({
   needsSetupLabel?: string;
 }) {
   const { t } = useTranslation();
-  const status = instance.configured ? "configured" : "needs_setup";
-  const label = instance.configured
-    ? configuredLabel ?? t("settings.channels.instanceConfigured", { defaultValue: "Configured" })
+  let status = instance.configured ? "configured" : "needs_setup";
+  let label = instance.configured
+    ? t("settings.channels.instanceConfigured", { defaultValue: "Configured" })
     : needsSetupLabel ?? t("settings.channels.instanceNeedsSetup", { defaultValue: "Needs setup" });
+  if (instance.runtime_status === "failed") {
+    status = "invalid";
+    label = t("settings.channels.runtimeFailed", { defaultValue: "Failed" });
+  } else if (instance.runtime_status === "starting") {
+    label = t("settings.channels.runtimeStarting", { defaultValue: "Starting" });
+  } else if (instance.enabled && instance.runtime_status !== "running") {
+    label = t("settings.channels.runtimeStopped", { defaultValue: "Not running" });
+  } else if (instance.runtime_status === "running") {
+    status = "connected";
+    label = configuredLabel
+      ?? t("settings.channels.validation.connected", { defaultValue: "Connected" });
+  }
   return (
     <span
       className={cn(

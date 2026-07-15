@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -111,6 +111,8 @@ class ChannelManager:
         self._webui_runtime_capabilities = dict(webui_runtime_capabilities or {})
         self.channels: dict[str, BaseChannel] = {}
         self._channel_owners: dict[str, str] = {}
+        self._channel_runtime_specs: dict[str, tuple[str, str]] = {}
+        self._channel_errors: dict[str, str] = {}
         self._channel_tasks: dict[str, asyncio.Task] = {}
         self._dispatch_task: asyncio.Task | None = None
         self._started = False
@@ -172,6 +174,7 @@ class ChannelManager:
                 cron_pending_job_ids=self._webui_cron_pending_job_ids,
                 local_trigger_pending_ids=self._webui_local_trigger_pending_ids,
                 channel_feature_action=self.apply_channel_feature_action,
+                channel_runtime_status=self.get_status,
                 logger=logger,
             )
             kwargs["gateway"] = gateway
@@ -191,35 +194,14 @@ class ChannelManager:
 
     def _init_channels(self) -> None:
         """Initialize enabled runtimes from dependency-free channel descriptors."""
-        from nanobot.channels.registry import discover_enabled, discover_plugins
+        from nanobot.channels.registry import discover_plugins
+        from nanobot.optional_features import ensure_enabled_channel_dependencies
 
         plugins = discover_plugins()
         default_sections: dict[str, Any] = {}
-
+        activations: dict[str, tuple[Any, list[tuple[str, Any]]]] = {}
         enabled_names: set[str] = set()
         for name, plugin in plugins.items():
-            section = self._channel_section(
-                name,
-                default_sections=default_sections,
-                default_enabled=plugin.default_enabled,
-            )
-            if section is None:
-                continue
-            try:
-                channel_setup_spec(name, plugin=plugin)
-                enabled = bool(channel_instance_specs(plugin, section))
-            except Exception as exc:
-                logger.warning("Could not inspect {} channel activation: {}", name, exc)
-                enabled = False
-            if enabled:
-                enabled_names.add(name)
-
-        for name, cls in discover_enabled(
-            enabled_names,
-            _plugins=plugins,
-            warn_import_errors=True,
-        ).items():
-            plugin = plugins[name]
             section = self._channel_section(
                 name,
                 default_sections=default_sections,
@@ -234,13 +216,36 @@ class ChannelManager:
                     (channel_runtime_name(plugin, spec.instance_id), spec)
                     for spec in specs
                 ]
-                collisions = sorted(
-                    set(self.channels) & {runtime_name for runtime_name, _ in runtime_specs}
+            except Exception as exc:
+                logger.warning("Could not inspect {} channel activation: {}", name, exc)
+                continue
+            if not runtime_specs:
+                continue
+            collisions = sorted(
+                set(self._channel_runtime_specs)
+                & {runtime_name for runtime_name, _spec in runtime_specs}
+            )
+            if collisions:
+                logger.warning(
+                    "{} channel runtime name(s) are already claimed: {}",
+                    name,
+                    ", ".join(collisions),
                 )
-                if collisions:
-                    raise ValueError(
-                        f"runtime name(s) already owned by another channel: {', '.join(collisions)}"
-                    )
+                continue
+            for runtime_name, spec in runtime_specs:
+                self._channel_runtime_specs[runtime_name] = (name, spec.instance_id)
+            activations[name] = (plugin, runtime_specs)
+            enabled_names.add(name)
+
+        dependency_errors = ensure_enabled_channel_dependencies(enabled_names, plugins)
+        for name, error in dependency_errors.items():
+            self._mark_channel_error(name, error)
+
+        for name, (plugin, runtime_specs) in activations.items():
+            if name in dependency_errors:
+                continue
+            try:
+                cls = plugin.load_channel_class()
                 built = [
                     (
                         runtime_name,
@@ -257,10 +262,29 @@ class ChannelManager:
                     self.channels[runtime_name] = channel
                     self._channel_owners[runtime_name] = name
                     logger.info("{} channel enabled as {}", cls.display_name, runtime_name)
-            except Exception as e:
-                logger.warning("{} channel not available: {}", name, e)
+            except Exception as exc:
+                self._mark_channel_error(
+                    name,
+                    "Channel runtime could not be loaded. Check gateway logs.",
+                )
+                logger.warning("{} channel not available: {}", name, exc)
 
         self._validate_allow_from()
+
+    def _mark_channel_error(self, owner: str, message: str) -> None:
+        self._mark_runtime_error(
+            (
+                runtime_name
+                for runtime_name, (runtime_owner, _instance_id)
+                in self._channel_runtime_specs.items()
+                if runtime_owner == owner
+            ),
+            message,
+        )
+
+    def _mark_runtime_error(self, runtime_names: Iterable[str], message: str) -> None:
+        for runtime_name in runtime_names:
+            self._channel_errors[runtime_name] = message
 
     def _validate_allow_from(self) -> None:
         for name, ch in self.channels.items():
@@ -307,9 +331,16 @@ class ChannelManager:
 
     async def _start_channel(self, name: str, channel: BaseChannel) -> None:
         """Start a channel and log any exceptions."""
+        errors = getattr(self, "_channel_errors", None)
+        if errors is None:
+            errors = self._channel_errors = {}
+        errors.pop(name, None)
         try:
             await channel.start()
+        except asyncio.CancelledError:
+            raise
         except Exception:
+            errors[name] = "Channel failed to start. Check gateway logs."
             logger.exception("Failed to start channel {}", name)
 
     def _start_channel_task(self, name: str, channel: BaseChannel) -> asyncio.Task:
@@ -390,6 +421,8 @@ class ChannelManager:
                 stopped = await self._stop_channel(runtime_name) or stopped
                 self.channels.pop(runtime_name, None)
                 self._channel_owners.pop(runtime_name, None)
+            self._channel_runtime_specs.pop(runtime_name, None)
+            self._channel_errors.pop(runtime_name, None)
             return {
                 "handled": True,
                 "ok": True,
@@ -399,16 +432,6 @@ class ChannelManager:
 
         if action != "enable":
             return {"handled": True, "ok": False, "requires_restart": True}
-
-        try:
-            cls = plugin.load_channel_class()
-        except Exception:
-            return {
-                "handled": True,
-                "ok": False,
-                "requires_restart": True,
-                "message": f"{name} channel could not be loaded.",
-            }
 
         specs = channel_instance_specs(plugin, section) if section is not None else []
         specs = [spec for spec in specs if spec.instance_id == instance_id]
@@ -442,6 +465,22 @@ class ChannelManager:
                     + ", ".join(sorted(collisions))
                 ),
             }
+        for runtime_name, spec in runtime_specs:
+            self._channel_runtime_specs[runtime_name] = (name, spec.instance_id)
+
+        try:
+            cls = plugin.load_channel_class()
+        except Exception:
+            self._mark_runtime_error(
+                (runtime_name for runtime_name, _spec in runtime_specs),
+                "Channel runtime could not be loaded. Check gateway logs.",
+            )
+            return {
+                "handled": True,
+                "ok": False,
+                "requires_restart": False,
+                "message": f"{name} channel could not be loaded. Check gateway logs.",
+            }
 
         try:
             built = [
@@ -456,13 +495,17 @@ class ChannelManager:
                 )
                 for runtime_name, spec in runtime_specs
             ]
-        except Exception as exc:
+        except Exception:
+            self._mark_runtime_error(
+                (runtime_name for runtime_name, _spec in runtime_specs),
+                "Channel runtime could not be built. Check gateway logs.",
+            )
             logger.exception("Failed to build {} channel after settings change", name)
             return {
                 "handled": True,
                 "ok": False,
-                "requires_restart": True,
-                "message": f"{name} channel could not be started: {exc}",
+                "requires_restart": False,
+                "message": f"{name} channel could not be started. Check gateway logs.",
             }
 
         runtime_names_to_replace = {runtime_name for runtime_name, _channel in built}
@@ -476,14 +519,26 @@ class ChannelManager:
         for runtime_name, channel in built:
             self.channels[runtime_name] = channel
             self._channel_owners[runtime_name] = name
+            self._channel_errors.pop(runtime_name, None)
             if self._started:
                 self._start_channel_task(runtime_name, channel)
             logger.info("{} channel applied without restart", runtime_name)
+        if self._started:
+            await asyncio.sleep(0)
+        failed = [
+            runtime_name
+            for runtime_name, _channel in built
+            if runtime_name in self._channel_errors
+        ]
         return {
             "handled": True,
-            "ok": True,
+            "ok": not failed,
             "requires_restart": False,
-            "message": f"{cls.display_name} channel applied without restart.",
+            "message": (
+                f"{cls.display_name} channel failed to start. Check gateway logs."
+                if failed
+                else f"{cls.display_name} channel applied without restart."
+            ),
         }
 
     async def start_all(self) -> None:
@@ -863,14 +918,40 @@ class ChannelManager:
         return self.channels.get(name)
 
     def get_status(self) -> dict[str, Any]:
-        """Get status of all channels."""
-        return {
-            name: {
+        """Return actual runtime state, including enabled runtimes that failed."""
+        owners = getattr(self, "_channel_owners", {})
+        runtime_specs = dict(getattr(self, "_channel_runtime_specs", {}))
+        for runtime_name in self.channels:
+            runtime_specs.setdefault(
+                runtime_name,
+                (owners.get(runtime_name, runtime_name), "default"),
+            )
+        tasks = getattr(self, "_channel_tasks", {})
+        errors = getattr(self, "_channel_errors", {})
+        status: dict[str, Any] = {}
+        for runtime_name, (owner, instance_id) in runtime_specs.items():
+            channel = self.channels.get(runtime_name)
+            task = tasks.get(runtime_name)
+            error = errors.get(runtime_name)
+            running = bool(channel and channel.is_running)
+            if error:
+                state = "failed"
+            elif running:
+                state = "running"
+            elif task is not None and not task.done():
+                state = "starting"
+            else:
+                state = "stopped"
+            status[runtime_name] = {
                 "enabled": True,
-                "running": channel.is_running
+                "running": running,
+                "state": state,
+                "owner": owner,
+                "instance_id": instance_id,
             }
-            for name, channel in self.channels.items()
-        }
+            if error:
+                status[runtime_name]["error"] = error
+        return status
 
     @property
     def enabled_channels(self) -> list[str]:

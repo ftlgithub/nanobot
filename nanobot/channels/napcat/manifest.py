@@ -20,6 +20,6 @@ PLUGIN = ChannelPlugin(
     display_name="NapCat",
     runtime=f"{__package__}.runtime:NapcatChannel",
     setup=SETUP_SPEC,
-    optional_extra="napcat",
+    dependencies=("aiohttp>=3.9.0,<4.0.0",),
     webui="webui/index.ts",
 )

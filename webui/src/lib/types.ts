@@ -696,6 +696,9 @@ export interface NanobotFeatureInfo {
   webui?: string;
   type: "channel" | "feature" | string;
   enabled: boolean;
+  running?: boolean;
+  runtime_status?: ChannelRuntimeStatus;
+  runtime_error?: string;
   configured?: boolean;
   config_values?: Record<string, string>;
   configured_fields?: string[];
@@ -728,10 +731,15 @@ export interface NanobotChannelInstanceInfo {
   display_name?: string;
   avatar_url?: string;
   enabled: boolean;
+  running?: boolean;
+  runtime_status?: ChannelRuntimeStatus;
+  runtime_error?: string;
   configured: boolean;
   config_values: Record<string, string>;
   configured_fields: string[];
 }
+
+export type ChannelRuntimeStatus = "running" | "starting" | "failed" | "stopped" | string;
 
 export interface NanobotFeaturesPayload {
   features: NanobotFeatureInfo[];

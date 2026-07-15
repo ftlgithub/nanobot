@@ -553,6 +553,8 @@ describe("SettingsView Apps catalog", () => {
             webui: "webui/index.ts",
             type: "channel",
             enabled: true,
+            running: true,
+            runtime_status: "running",
             installed: true,
             ready: true,
             status: "enabled",
@@ -638,7 +640,7 @@ describe("SettingsView Apps catalog", () => {
     expect(screen.queryByText("Disabled channel 'matrix'")).not.toBeInTheDocument();
   });
 
-  it("shows enabled nanobot channels with missing support as enabled", async () => {
+  it("shows an enabled channel with missing support as failed", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === "/api/settings") return jsonResponse(settingsPayload());
@@ -651,6 +653,9 @@ describe("SettingsView Apps catalog", () => {
             display_name: "Matrix",
             type: "channel",
             enabled: true,
+            running: false,
+            runtime_status: "failed",
+            runtime_error: "Channel dependencies could not be installed. Check gateway logs.",
             installed: false,
             ready: false,
             status: "missing_dependency",
@@ -684,11 +689,11 @@ describe("SettingsView Apps catalog", () => {
     renderSettingsView({ initialSection: "channels" });
 
     expect(await screen.findByRole("button", { name: "View Matrix settings" })).toBeInTheDocument();
-    expect(screen.getByText("1 enabled · 1 channels")).toBeInTheDocument();
-    expect(screen.getAllByText("On").length).toBeGreaterThan(0);
+    expect(screen.getByText("0 running · 1 channels")).toBeInTheDocument();
+    expect(screen.getAllByText("Failed").length).toBeGreaterThan(0);
     expect(screen.queryByText("Enabled, support needs install")).not.toBeInTheDocument();
 
-    expect(screen.getByRole("switch", { name: "Matrix channel" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch", { name: "Matrix channel" })).toHaveAttribute("aria-checked", "false");
     fireEvent.click(screen.getByRole("button", { name: "Install support" }));
     fireEvent.click(screen.getByRole("button", { name: "Install and enable" }));
 
@@ -699,6 +704,51 @@ describe("SettingsView Apps catalog", () => {
           headers: { Authorization: "Bearer tok" },
         }),
       ),
+    );
+  });
+
+  it("shows a configured channel as failed when its runtime did not start", async () => {
+    const runtimeError = "Channel failed to start. Check gateway logs.";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/settings") return jsonResponse(settingsPayload());
+        if (url === "/api/settings/cli-apps") return jsonResponse({ apps: [], installed_count: 0 });
+        if (url === "/api/settings/mcp-presets") return jsonResponse({ presets: [], installed_count: 0 });
+        if (url === "/api/settings/nanobot-features") {
+          return jsonResponse({
+            features: [{
+              name: "matrix",
+              display_name: "Matrix",
+              type: "channel",
+              enabled: true,
+              configured: true,
+              installed: true,
+              ready: false,
+              running: false,
+              runtime_status: "failed",
+              runtime_error: runtimeError,
+              status: "failed",
+              install_supported: true,
+              requires_restart: false,
+            }],
+            enabled_count: 0,
+          });
+        }
+        return { ok: false, status: 404, json: async () => ({}) } as Response;
+      }),
+    );
+
+    renderSettingsView({ initialSection: "channels" });
+
+    expect(await screen.findByRole("button", { name: "View Matrix settings" })).toBeInTheDocument();
+    expect(screen.getByText("0 running · 1 channels")).toBeInTheDocument();
+    expect(screen.getAllByText("Failed").length).toBeGreaterThan(0);
+    expect(screen.getByText(runtimeError)).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Matrix channel" })).toHaveAttribute(
+      "aria-checked",
+      "false",
     );
   });
 
@@ -848,11 +898,15 @@ describe("SettingsView Apps catalog", () => {
             webui: "webui/index.tsx",
             type: "channel",
             enabled: true,
+            running: true,
+            runtime_status: "running",
             configured: true,
             instances: [{
               id: "default",
               name: "nanobot",
               enabled: true,
+              running: true,
+              runtime_status: "running",
               configured: true,
               config_values: { "channels.feishu.appId": "cli_test" },
               configured_fields: [
@@ -1017,6 +1071,8 @@ describe("SettingsView Apps catalog", () => {
             display_name: "Multi Plugin",
             type: "channel",
             enabled: true,
+            running: true,
+            runtime_status: "running",
             configured: true,
             installed: true,
             ready: true,
@@ -1037,6 +1093,8 @@ describe("SettingsView Apps catalog", () => {
                 id: "default",
                 name: "Default worker",
                 enabled: true,
+                running: true,
+                runtime_status: "running",
                 configured: true,
                 config_values: { "channels.multiplugin.region": "us" },
                 configured_fields: ["channels.multiplugin.token"],
@@ -1045,6 +1103,8 @@ describe("SettingsView Apps catalog", () => {
                 id: "product",
                 name: "Product worker",
                 enabled: true,
+                running: true,
+                runtime_status: "running",
                 configured: true,
                 config_values: { "channels.multiplugin.region": "eu" },
                 configured_fields: ["channels.multiplugin.token"],
@@ -1088,6 +1148,8 @@ describe("SettingsView Apps catalog", () => {
         installed: true,
         ready: true,
         status: "enabled",
+        running: true,
+        runtime_status: "running",
         install_supported: true,
         requires_restart: true,
         instances: [{
@@ -1096,6 +1158,8 @@ describe("SettingsView Apps catalog", () => {
           display_name: "Support Bot",
           avatar_url: "https://example.com/support.png",
           enabled: true,
+          running: true,
+          runtime_status: "running",
           configured: true,
           config_values: { "channels.feishu.appId": "cli_support" },
           configured_fields: [
@@ -1138,6 +1202,67 @@ describe("SettingsView Apps catalog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
     await waitFor(() => expect(reconnectUrls).toHaveLength(1));
     expect(document.querySelector('img[src="https://example.com/support.png"]')).toBeTruthy();
+  });
+
+  it("does not call a configured Feishu assistant connected after runtime failure", async () => {
+    const runtimeError = "Channel failed to start. Check gateway logs.";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/settings") return jsonResponse(settingsPayload());
+        if (url === "/api/settings/cli-apps") return jsonResponse({ apps: [], installed_count: 0 });
+        if (url === "/api/settings/mcp-presets") return jsonResponse({ presets: [], installed_count: 0 });
+        if (url === "/api/settings/nanobot-features") {
+          return jsonResponse({
+            features: [{
+              name: "feishu",
+              display_name: "Feishu",
+              webui: "webui/index.tsx",
+              type: "channel",
+              enabled: true,
+              configured: true,
+              installed: true,
+              ready: false,
+              running: false,
+              runtime_status: "failed",
+              runtime_error: runtimeError,
+              status: "failed",
+              install_supported: true,
+              requires_restart: false,
+              instances: [{
+                id: "default",
+                name: "test",
+                enabled: true,
+                configured: true,
+                running: false,
+                runtime_status: "failed",
+                runtime_error: runtimeError,
+                config_values: { "channels.feishu.appId": "cli_test" },
+                configured_fields: [
+                  "channels.feishu.appId",
+                  "channels.feishu.appSecret",
+                ],
+              }],
+            }],
+            enabled_count: 0,
+          });
+        }
+        return { ok: false, status: 404, json: async () => ({}) } as Response;
+      }),
+    );
+
+    renderSettingsView({ initialSection: "channels" });
+
+    await screen.findByText("No assistant connected");
+    expect(screen.getByText("0 running · 1 channels")).toBeInTheDocument();
+    expect(screen.getAllByText("Failed").length).toBeGreaterThan(0);
+    expect(screen.getByText(runtimeError)).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "test assistant" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    expect(screen.queryByText("Connected")).not.toBeInTheDocument();
   });
 
   it("shows group behavior fields as options", async () => {
@@ -1291,6 +1416,8 @@ describe("SettingsView Apps catalog", () => {
               webui: "webui/index.ts",
               type: "channel",
               enabled: true,
+              running: true,
+              runtime_status: "running",
               configured: true,
               installed: true,
               ready: true,

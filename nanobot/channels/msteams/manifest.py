@@ -21,6 +21,9 @@ PLUGIN = ChannelPlugin(
     display_name="Microsoft Teams",
     runtime=f"{__package__}.runtime:MSTeamsChannel",
     setup=SETUP_SPEC,
-    optional_extra="msteams",
+    dependencies=(
+        "PyJWT>=2.0,<3.0",
+        "cryptography>=41.0",
+    ),
     webui="webui/index.ts",
 )
