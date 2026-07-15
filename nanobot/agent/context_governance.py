@@ -328,12 +328,12 @@ class ContextGovernor:
         compacted_tool_call_ids: set[str],
     ) -> list[dict[str, Any]]:
         """Compact in-flight tool results only when the request would overflow."""
+        updated = self._apply_recorded_compactions(messages, compacted_tool_call_ids)
         budget = self.input_budget(config)
         if budget <= 0:
-            return messages
+            return updated
 
         tools = config.tools.get_definitions()
-        updated = self._apply_recorded_compactions(messages, compacted_tool_call_ids)
         estimate, source = estimate_prompt_tokens_chain(
             config.provider,
             config.model,
@@ -387,6 +387,7 @@ class ContextGovernor:
         config: ContextGovernanceConfig,
         messages: list[dict[str, Any]],
         prepared_messages: list[dict[str, Any]],
+        compacted_tool_call_ids: set[str],
     ) -> list[dict[str, Any]] | None:
         """Replace the largest current-turn result after a provider overflow.
 
@@ -420,6 +421,7 @@ class ContextGovernor:
         if len(hint) >= original_chars:
             return None
 
+        compacted_tool_call_ids.add(str(message["tool_call_id"]))
         updated = [dict(item) for item in prepared_messages]
         updated[idx] = replacement
         return updated

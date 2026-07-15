@@ -906,13 +906,16 @@ def test_provider_overflow_recovery_replaces_largest_result_without_tokenizer(mo
         fail_if_tokenized,
     )
 
+    compacted_tool_call_ids: set[str] = set()
     recovered = ContextGovernor().recover_provider_overflow(
         _governance_config(provider, tools, spec),
         messages,
         prepared_messages,
+        compacted_tool_call_ids,
     )
 
     assert recovered is not None
+    assert compacted_tool_call_ids == {"large"}
     assert recovered[0]["content"] == "s" * 500
     assert "too large to fit" in recovered[1]["content"]
     assert messages[1]["content"] == "l" * 1000
@@ -971,6 +974,68 @@ async def test_runner_retries_provider_context_overflow_once_with_tool_hint():
     assert oversized_result not in hinted_result
     assert result.stop_reason == "completed"
     assert result.final_content == "recovered"
+
+
+@pytest.mark.asyncio
+async def test_runner_keeps_provider_overflow_compaction_for_followup_tool_call():
+    """A narrower follow-up must not replay the result that already overflowed."""
+    from nanobot.agent.runner import AgentRunner
+
+    provider = MagicMock()
+    provider.chat_with_retry = AsyncMock(side_effect=[
+        LLMResponse(
+            content="working",
+            tool_calls=[
+                ToolCallRequest(id="read_1", name="read_file", arguments={"path": "x"})
+            ],
+            finish_reason="tool_calls",
+        ),
+        LLMResponse(
+            content="request rejected",
+            finish_reason="error",
+            error_kind=ERROR_KIND_CONTEXT_OVERFLOW,
+        ),
+        LLMResponse(
+            content="trying a smaller range",
+            tool_calls=[
+                ToolCallRequest(
+                    id="read_2",
+                    name="read_file",
+                    arguments={"path": "x", "offset": 1, "limit": 10},
+                )
+            ],
+            finish_reason="tool_calls",
+        ),
+        LLMResponse(content="done", finish_reason="stop"),
+    ])
+    tools = MagicMock()
+    tools.get_definitions.return_value = [
+        {"type": "function", "function": {"name": "read_file"}}
+    ]
+    oversized_result = "provider-counted result " * 100
+    tools.execute = AsyncMock(side_effect=[oversized_result, "small result"])
+
+    result = await AgentRunner().run(make_run_spec(
+        provider,
+        initial_messages=[{"role": "user", "content": "read it"}],
+        tools=tools,
+        model="test-model",
+        max_iterations=3,
+        max_tool_result_chars=_MAX_TOOL_RESULT_CHARS,
+        context_window_tokens=1000,
+        max_tokens=900,
+    ))
+
+    assert provider.chat_with_retry.await_count == 4
+    final_request = provider.chat_with_retry.await_args_list[3].kwargs["messages"]
+    prior_result = next(
+        message["content"]
+        for message in final_request
+        if message.get("tool_call_id") == "read_1"
+    )
+    assert "compacted to fit context" in prior_result
+    assert oversized_result not in prior_result
+    assert result.final_content == "done"
 
 
 @pytest.mark.asyncio

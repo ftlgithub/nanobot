@@ -10,10 +10,17 @@ import pytest
 from nanobot.agent.goal_permission import goal_mutation_allowed, goal_mutation_permission
 from nanobot.bus.outbound_events import StreamedResponseEvent
 from nanobot.config.schema import AgentDefaults
-from nanobot.providers.base import GenerationSettings, LLMProvider, LLMResponse, ToolCallRequest
+from nanobot.providers.base import (
+    ERROR_KIND_CONTEXT_OVERFLOW,
+    GenerationSettings,
+    LLMProvider,
+    LLMResponse,
+    ToolCallRequest,
+)
 from nanobot.runtime_context import RuntimeContextBlock, public_history_message
 from nanobot.session.goal_state import GOAL_STATE_KEY
 from nanobot.utils.llm_runtime import LLMRuntime
+from nanobot.utils.runtime import CONTEXT_OVERFLOW_FALLBACK_MESSAGE
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 _GOAL_RUNTIME_GUIDANCE_TAG = "[Goal Runtime Guidance — host instructions]"
@@ -350,6 +357,37 @@ async def test_loop_stream_filter_handles_think_only_prefix_without_crashing(tmp
 
     assert final_content == "Hello"
     assert deltas == ["Hello"]
+    assert endings == [False]
+
+
+@pytest.mark.asyncio
+async def test_loop_streams_context_overflow_fallback(tmp_path):
+    loop = _make_loop(tmp_path)
+    loop.provider.chat_stream_with_retry = AsyncMock(return_value=LLMResponse(
+        content="request rejected",
+        finish_reason="error",
+        error_kind=ERROR_KIND_CONTEXT_OVERFLOW,
+    ))
+    loop.tools.get_definitions = MagicMock(return_value=[])
+    deltas: list[str] = []
+    endings: list[bool] = []
+
+    async def on_stream(delta: str) -> None:
+        deltas.append(delta)
+
+    async def on_stream_end(*, resuming: bool = False) -> None:
+        endings.append(resuming)
+
+    final_content, _, _, stop_reason, _ = await loop._run_agent_loop(
+        [],
+        runtime=loop.llm_runtime(),
+        on_stream=on_stream,
+        on_stream_end=on_stream_end,
+    )
+
+    assert final_content == CONTEXT_OVERFLOW_FALLBACK_MESSAGE
+    assert stop_reason == "context_overflow"
+    assert deltas == [CONTEXT_OVERFLOW_FALLBACK_MESSAGE]
     assert endings == [False]
 
 

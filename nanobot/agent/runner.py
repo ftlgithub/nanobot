@@ -399,6 +399,7 @@ class AgentRunner:
                     governance_config,
                     messages,
                     messages_for_model,
+                    compacted_tool_call_ids,
                     hook,
                     context,
                 )
@@ -417,6 +418,8 @@ class AgentRunner:
                 context.final_content = final_content
                 context.stop_reason = stop_reason
                 if hook.wants_streaming():
+                    context.streamed_content = True
+                    await hook.on_stream(context, final_content)
                     await hook.on_stream_end(context, resuming=False)
                 await hook.after_iteration(context)
                 break
@@ -961,6 +964,7 @@ class AgentRunner:
         governance_config: ContextGovernanceConfig,
         messages: list[dict[str, Any]],
         messages_for_model: list[dict[str, Any]],
+        compacted_tool_call_ids: set[str],
         hook: AgentHook,
         context: AgentHookContext,
     ) -> tuple[list[dict[str, Any]], LLMResponse] | None:
@@ -969,6 +973,7 @@ class AgentRunner:
                 governance_config,
                 messages,
                 messages_for_model,
+                compacted_tool_call_ids,
             )
         except Exception:
             logger.exception(

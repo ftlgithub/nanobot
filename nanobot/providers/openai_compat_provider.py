@@ -1515,8 +1515,7 @@ class OpenAICompatProvider(LLMProvider):
         metadata = OpenAICompatProvider._extract_error_metadata(e)
         status = metadata.get("error_status_code")
         if (
-            spec
-            and spec.is_local
+            _is_local_endpoint(spec, api_base)
             and status in _LOCAL_CONTEXT_OVERFLOW_STATUS_CODES
             and any(phrase in text for phrase in _LOCAL_CONTEXT_OVERFLOW_ERROR_PHRASES)
         ):
