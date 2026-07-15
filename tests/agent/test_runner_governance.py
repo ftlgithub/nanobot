@@ -916,8 +916,9 @@ def test_provider_overflow_recovery_replaces_largest_result_without_tokenizer(mo
 
     assert recovered is not None
     assert compacted_tool_call_ids == {"large"}
-    assert recovered[0]["content"] == "s" * 500
-    assert "too large to fit" in recovered[1]["content"]
+    assert recovered.model_messages[0]["content"] == "s" * 500
+    assert "too large to fit" in recovered.model_messages[1]["content"]
+    assert "too large to fit" in recovered.canonical_messages[1]["content"]
     assert messages[1]["content"] == "l" * 1000
 
 
@@ -974,6 +975,81 @@ async def test_runner_retries_provider_context_overflow_once_with_tool_hint():
     assert oversized_result not in hinted_result
     assert result.stop_reason == "completed"
     assert result.final_content == "recovered"
+
+
+@pytest.mark.asyncio
+async def test_runner_keeps_provider_overflow_hint_across_runs():
+    """A provider-confirmed result replacement must survive the next user turn."""
+    from nanobot.agent.runner import AgentRunner
+
+    overflow = LLMResponse(
+        content="request rejected",
+        finish_reason="error",
+        error_kind=ERROR_KIND_CONTEXT_OVERFLOW,
+    )
+    first_provider = MagicMock()
+    first_provider.chat_with_retry = AsyncMock(side_effect=[
+        LLMResponse(
+            content="working",
+            tool_calls=[
+                ToolCallRequest(id="read_1", name="read_file", arguments={"path": "x"})
+            ],
+            finish_reason="tool_calls",
+        ),
+        overflow,
+        LLMResponse(content="recovered", finish_reason="stop"),
+    ])
+    tools = MagicMock()
+    tools.get_definitions.return_value = [
+        {"type": "function", "function": {"name": "read_file"}}
+    ]
+    oversized_result = "provider-counted result " * 100
+    tools.execute = AsyncMock(return_value=oversized_result)
+
+    first_result = await AgentRunner().run(make_run_spec(
+        first_provider,
+        initial_messages=[{"role": "user", "content": "read it"}],
+        tools=tools,
+        model="test-model",
+        max_iterations=2,
+        max_tool_result_chars=_MAX_TOOL_RESULT_CHARS,
+        context_window_tokens=1000,
+        max_tokens=900,
+    ))
+
+    persisted_result = next(
+        message["content"]
+        for message in first_result.messages
+        if message.get("tool_call_id") == "read_1"
+    )
+    assert "too large to fit" in persisted_result
+    assert oversized_result not in persisted_result
+
+    second_provider = MagicMock()
+    second_provider.chat_with_retry = AsyncMock(
+        return_value=LLMResponse(content="next turn completed", finish_reason="stop")
+    )
+    second_result = await AgentRunner().run(make_run_spec(
+        second_provider,
+        initial_messages=[
+            *first_result.messages,
+            {"role": "user", "content": "what next?"},
+        ],
+        tools=tools,
+        model="test-model",
+        max_iterations=1,
+        max_tool_result_chars=_MAX_TOOL_RESULT_CHARS,
+        context_window_tokens=1000,
+        max_tokens=900,
+    ))
+
+    replayed_messages = second_provider.chat_with_retry.await_args.kwargs["messages"]
+    assert not any(
+        oversized_result in str(message.get("content") or "")
+        for message in replayed_messages
+    )
+    assert second_result.stop_reason == "completed"
+    assert second_result.final_content == "next turn completed"
 
 
 @pytest.mark.asyncio

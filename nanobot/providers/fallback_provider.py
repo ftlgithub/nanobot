@@ -255,7 +255,9 @@ class FallbackProvider(LLMProvider):
             else:
                 kwargs["reasoning_effort"] = fallback.reasoning_effort
             try:
-                fallback_response = await call(fallback_provider, kwargs)
+                fallback_response = self._normalize_error_response(
+                    await call(fallback_provider, kwargs)
+                )
             finally:
                 for name, value in original_values.items():
                     if value is _MISSING:
@@ -267,6 +269,13 @@ class FallbackProvider(LLMProvider):
                 logger.info(
                     "Fallback '{}' succeeded after primary '{}' failed",
                     fallback_model, primary_model,
+                )
+                return fallback_response
+
+            if fallback_response.is_context_overflow_error:
+                logger.warning(
+                    "Fallback '{}' returned a context overflow; returning it to the agent",
+                    fallback_model,
                 )
                 return fallback_response
 

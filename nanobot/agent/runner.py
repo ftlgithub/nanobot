@@ -969,7 +969,7 @@ class AgentRunner:
         context: AgentHookContext,
     ) -> tuple[list[dict[str, Any]], LLMResponse] | None:
         try:
-            retry_messages = self.context_governor.recover_provider_overflow(
+            recovery = self.context_governor.recover_provider_overflow(
                 governance_config,
                 messages,
                 messages_for_model,
@@ -982,9 +982,11 @@ class AgentRunner:
             )
             return None
 
-        if retry_messages is None:
+        if recovery is None:
             return None
 
+        messages[:] = recovery.canonical_messages
+        retry_messages = recovery.model_messages
         logger.warning(
             "Provider rejected the context for {}; retrying once with an "
             "oversized tool-result hint",

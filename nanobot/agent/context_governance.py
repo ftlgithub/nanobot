@@ -74,6 +74,14 @@ class ContextGovernanceConfig:
     inflight_start_index: int = 0
 
 
+@dataclass(slots=True)
+class ContextOverflowRecovery:
+    """Model and canonical message copies after a confirmed provider overflow."""
+
+    model_messages: list[dict[str, Any]]
+    canonical_messages: list[dict[str, Any]]
+
+
 class ContextGovernor:
     """Prepare model-copy messages while preserving persisted history."""
 
@@ -388,11 +396,12 @@ class ContextGovernor:
         messages: list[dict[str, Any]],
         prepared_messages: list[dict[str, Any]],
         compacted_tool_call_ids: set[str],
-    ) -> list[dict[str, Any]] | None:
+    ) -> ContextOverflowRecovery | None:
         """Replace the largest current-turn result after a provider overflow.
 
-        The canonical transcript remains untouched. Replacements preserve the assistant/tool
-        pairing while giving the model the recovery instruction used for ordinary tool failures.
+        Both returned lists preserve the assistant/tool pairing. The model copy is used for the
+        immediate retry, while the canonical copy keeps the confirmed replacement across turns.
+        The input lists remain untouched.
         """
         inflight_tool_call_ids = {
             str(message.get("tool_call_id"))
@@ -421,10 +430,26 @@ class ContextGovernor:
         if len(hint) >= original_chars:
             return None
 
-        compacted_tool_call_ids.add(str(message["tool_call_id"]))
-        updated = [dict(item) for item in prepared_messages]
-        updated[idx] = replacement
-        return updated
+        tool_call_id = str(message["tool_call_id"])
+        canonical_messages = [dict(item) for item in messages]
+        for canonical_idx in range(config.inflight_start_index, len(canonical_messages)):
+            canonical_message = canonical_messages[canonical_idx]
+            if (
+                canonical_message.get("role") == "tool"
+                and str(canonical_message.get("tool_call_id") or "") == tool_call_id
+            ):
+                canonical_messages[canonical_idx] = dict(canonical_message, content=hint)
+                break
+        else:
+            return None
+
+        compacted_tool_call_ids.add(tool_call_id)
+        model_messages = [dict(item) for item in prepared_messages]
+        model_messages[idx] = replacement
+        return ContextOverflowRecovery(
+            model_messages=model_messages,
+            canonical_messages=canonical_messages,
+        )
 
     def snip_history(
         self,
