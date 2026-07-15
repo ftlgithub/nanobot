@@ -80,7 +80,7 @@ function InferredFileReferenceChip({
         if (!cancelled) setResult({ available, path, resolve });
       })
       .catch(() => {
-        if (!cancelled) setResult({ available: true, path, resolve });
+        if (!cancelled) setResult({ available: false, path, resolve });
       });
     return () => {
       cancelled = true;

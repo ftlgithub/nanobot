@@ -428,7 +428,7 @@ export function ThreadShell({
           }
           if ([400, 403, 404, 415].includes(error.status)) return false;
         }
-        return true;
+        return false;
       },
     );
     const entry: FilePreviewAvailabilityCacheEntry = {

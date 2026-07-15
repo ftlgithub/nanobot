@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { FilePreviewAvailabilityProvider } from "@/components/FilePreviewAvailabilityContext";
@@ -54,6 +54,33 @@ describe("MarkdownTextRenderer", () => {
 
     fireEvent.click(reference);
 
+    expect(onOpenFilePreview).not.toHaveBeenCalled();
+  });
+
+  it("keeps inferred inline file paths non-interactive when availability lookup fails", async () => {
+    const onOpenFilePreview = vi.fn();
+    let rejectAvailability!: (reason?: unknown) => void;
+    const resolve = vi.fn(() => new Promise<boolean>((_resolve, reject) => {
+      rejectAvailability = reject;
+    }));
+    render(
+      <FilePreviewAvailabilityProvider resolve={resolve}>
+        <MarkdownTextRenderer onOpenFilePreview={onOpenFilePreview}>
+          {"Unreadable file: `notes/locked.md`"}
+        </MarkdownTextRenderer>
+      </FilePreviewAvailabilityProvider>,
+    );
+
+    const reference = screen.getByTestId("inline-file-path");
+    await waitFor(() => expect(resolve).toHaveBeenCalledWith("notes/locked.md"));
+    await act(async () => {
+      rejectAvailability(new Error("probe failed"));
+      await Promise.resolve();
+    });
+
+    expect(reference).not.toHaveAttribute("role");
+    expect(reference).not.toHaveAttribute("tabindex");
+    fireEvent.click(reference);
     expect(onOpenFilePreview).not.toHaveBeenCalled();
   });
 
