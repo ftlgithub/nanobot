@@ -198,6 +198,13 @@ class BaseChannel(ABC):
         """
         return
 
+    async def send_navigation(self, chat_id: str, nav_data: dict[str, Any]) -> None:
+        """Send a navigation command to the client.
+
+        The default implementation is a no-op; WebSocket-based channels
+        override this to dispatch a navigation event.
+        """
+
     async def send_reasoning(self, msg: OutboundMessage) -> None:
         """Deliver a complete reasoning block.
 

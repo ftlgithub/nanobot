@@ -50,6 +50,7 @@ from nanobot.webui.session_identity import is_valid_webui_chat_id, webui_session
 from nanobot.webui.sidebar_state import write_webui_sidebar_state
 from nanobot.webui.temporary_chats import TemporaryChatError
 from nanobot.webui.transcription_ws import webui_transcription_event
+from nanobot.webui.user_session_map import get_instance as get_user_map
 
 _WEBUI_REQUEST_CACHE_TTL_S = 5 * 60.0
 _WEBUI_REQUEST_CACHE_MAX = 256
@@ -295,6 +296,7 @@ class WebUICommandRouter:
             return
         if command_type == "new_chat":
             new_id = str(uuid.uuid4())
+            user_id = envelope.get("user_id", "")
             scope = await self.workspace_scope_or_error(
                 connection,
                 lambda: self._workspaces.scope_for_new_chat(
@@ -307,6 +309,8 @@ class WebUICommandRouter:
                 return
             self._workspaces.stage_scope(new_id, scope)
             self._transport.webui_attach(connection, new_id)
+            if user_id:
+                get_user_map().associate(user_id, webui_session_key(new_id))
             await self._transport.webui_send_event(
                 connection,
                 "attached",

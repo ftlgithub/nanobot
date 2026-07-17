@@ -1176,6 +1176,21 @@ class WebSocketChannel(BaseChannel):
     ) -> None:
         """Serialize one ordinary outbound message selected by the projector."""
         conns = list(self._subs.get(msg.chat_id, ()))
+        if msg.metadata.get("_navigation"):
+            nav_data = msg.metadata["_navigation"]
+            if conns:
+                nav_payload: dict[str, Any] = {
+                    "event": "navigation",
+                    "chat_id": msg.chat_id,
+                    **nav_data,
+                }
+                raw_nav = json.dumps(nav_payload, ensure_ascii=False)
+                for connection in conns:
+                    await self._safe_send_to(connection, raw_nav, label=" navigation ")
+            # 导航消息如果没有文本内容则不再发送空消息
+            if not msg.content:
+                return
+
         text = msg.content
         wire_text = self._media.rewrite_local_markdown_images(text)
         payload: dict[str, Any] = {
@@ -1320,6 +1335,22 @@ class WebSocketChannel(BaseChannel):
             return
         for connection in conns:
             await self._safe_send_to(connection, raw, label=" file_edit ")
+
+    async def send_navigation(self, chat_id: str, nav_data: dict[str, Any]) -> None:
+        """Send a navigation command to WebSocket clients."""
+        conns = list(self._subs.get(chat_id, ()))
+        if not conns:
+            return
+        nav_payload: dict[str, Any] = {
+            "event": "navigation",
+            "chat_id": chat_id,
+            **nav_data,
+        }
+        raw_nav = json.dumps(nav_payload, ensure_ascii=False)
+        for connection in conns:
+            await self._safe_send_to(
+                connection, raw_nav, label=" navigation "
+            )
 
     async def send_delta(
         self,

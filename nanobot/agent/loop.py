@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import inspect
+import json
 import os
+import re
 import time
 import weakref
 from collections.abc import Coroutine, Iterable, Mapping
@@ -1240,8 +1243,25 @@ class AgentLoop:
                     if result.pending_stream_content is not None
                     else result.final_content or ""
                 )
+                _nav_d = None
+                _nav_m = re.search(r'<!--NAV:(.*?)-->', stream_content)
+                if _nav_m:
+                    try:
+                        _nav_d = json.loads(_nav_m.group(1))
+                        stream_content = (stream_content[:_nav_m.start()] + stream_content[_nav_m.end():]).strip()
+                    except json.JSONDecodeError:
+                        pass
                 await events.publish(StreamDeltaEvent(content=stream_content))
                 await events.publish(StreamEndEvent())
+                if _nav_d:
+                    nav_channel = request_context.channel if request_context else "cli"
+                    nav_chat_id = request_context.chat_id if request_context else "direct"
+                    await self.bus.publish_outbound(OutboundMessage(
+                        channel=nav_channel,
+                        chat_id=nav_chat_id,
+                        content="",
+                        metadata={"_navigation": _nav_d},
+                    ))
         elif result.stop_reason == "error":
             logger.error("LLM returned error: {}", (result.final_content or "")[:200])
         return result
@@ -1736,6 +1756,17 @@ class AgentLoop:
             event = StreamedResponseEvent()
         if turn_latency_ms is not None:
             meta["latency_ms"] = int(turn_latency_ms)
+
+        # 检测并剥离导航标记，注入 metadata
+        nav_match = re.search(r'<!--NAV:(.*?)-->', final_content)
+        if nav_match:
+            try:
+                nav_data = json.loads(nav_match.group(1))
+                meta["_navigation"] = nav_data
+                final_content = (final_content[:nav_match.start()]
+                                 + final_content[nav_match.end():]).strip()
+            except json.JSONDecodeError:
+                pass
 
         return OutboundMessage(
             channel=msg.channel,
