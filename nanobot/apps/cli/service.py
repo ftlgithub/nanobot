@@ -578,6 +578,20 @@ class CliAppManager:
         for app in self.catalog(force_refresh=force_refresh)[0]:
             if str(app.get("name", "")).lower() == wanted:
                 return app
+        # Fall back to locally-installed apps not in any remote catalog
+        installed = self._load_installed()
+        raw = installed.get(wanted)
+        if raw is not None:
+            entry = raw if isinstance(raw, dict) else {}
+            return {
+                "name": str(wanted),
+                "display_name": str(entry.get("display_name") or wanted),
+                "description": str(entry.get("description") or ""),
+                "category": str(entry.get("category") or "installed"),
+                "entry_point": str(entry.get("entry_point") or ""),
+                "_source": str(entry.get("source") or "local"),
+                "version": str(entry.get("version") or "0.1.0"),
+            }
         raise CliAppError(f"CLI app '{name}' not found", status=404)
 
     def mentioned_installed_apps(self, text: str) -> list[dict[str, str]]:

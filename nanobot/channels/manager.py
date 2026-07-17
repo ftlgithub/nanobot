@@ -794,6 +794,22 @@ class ChannelManager:
             await ChannelManager._send_stream_event(channel, msg, event)
         elif isinstance(event, StreamEndEvent):
             await ChannelManager._send_stream_event(channel, msg, event)
+            # Stream-end messages may carry _navigation metadata.
+            # send_delta() does not check for it, so dispatch here.
+            if msg.metadata.get("_navigation"):
+                nav = msg.metadata["_navigation"]
+                await channel.send_navigation(
+                    msg.chat_id,
+                    nav if isinstance(nav, dict) else {},
+                )
+        elif isinstance(event, StreamedResponseEvent) and msg.metadata.get("_navigation"):
+            # Content already delivered via streaming deltas.
+            # Only dispatch the navigation command.
+            nav = msg.metadata["_navigation"]
+            await channel.send_navigation(
+                msg.chat_id,
+                nav if isinstance(nav, dict) else {},
+            )
         elif not isinstance(event, StreamedResponseEvent):
             await channel.send(msg)
 

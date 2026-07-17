@@ -58,6 +58,7 @@ from nanobot.webui.http_utils import (
 )
 from nanobot.webui.mcp_presets_api import normalize_mcp_preset_mentions
 from nanobot.webui.transcription_ws import webui_transcription_event
+from nanobot.webui.user_session_map import get_instance as get_user_map
 from nanobot.webui.websocket_logging import websockets_server_logger
 
 # Plain HTTP WebUI routes also run through websockets.process_request.
@@ -564,6 +565,7 @@ class WebSocketChannel(BaseChannel):
         t = envelope.get("type")
         if t == "new_chat":
             new_id = str(uuid.uuid4())
+            user_id = envelope.get("user_id", "")
             scope = await self._workspace_scope_or_error(
                 connection,
                 lambda: self._workspaces.scope_for_new_chat(
@@ -575,6 +577,8 @@ class WebSocketChannel(BaseChannel):
                 return
             self._workspaces.persist_scope(new_id, scope)
             self._attach(connection, new_id)
+            if user_id:
+                get_user_map().associate(user_id, f"websocket:{new_id}")
             await self._send_event(connection, "attached", chat_id=new_id)
             await self._send_event(
                 connection,
@@ -850,6 +854,22 @@ class WebSocketChannel(BaseChannel):
                 msg.metadata,
             )
             return
+        # 提取并分发导航指令（与主消息并列发送，不 return）
+        if msg.metadata.get("_navigation"):
+            nav_data = msg.metadata["_navigation"]
+            if conns:
+                nav_payload: dict[str, Any] = {
+                    "event": "navigation",
+                    "chat_id": msg.chat_id,
+                    **nav_data,
+                }
+                raw_nav = json.dumps(nav_payload, ensure_ascii=False)
+                for connection in conns:
+                    await self._safe_send_to(connection, raw_nav, label=" navigation ")
+            # 导航消息如果没有文本内容则不再发送空消息
+            if not msg.content:
+                return
+
         text = msg.content
         wire_text = self._media.rewrite_local_markdown_images(text)
         payload: dict[str, Any] = {
@@ -985,6 +1005,22 @@ class WebSocketChannel(BaseChannel):
             return
         for connection in conns:
             await self._safe_send_to(connection, raw, label=" file_edit ")
+
+    async def send_navigation(self, chat_id: str, nav_data: dict[str, Any]) -> None:
+        """Send a navigation command to WebSocket clients."""
+        conns = list(self._subs.get(chat_id, ()))
+        if not conns:
+            return
+        nav_payload: dict[str, Any] = {
+            "event": "navigation",
+            "chat_id": chat_id,
+            **nav_data,
+        }
+        raw_nav = json.dumps(nav_payload, ensure_ascii=False)
+        for connection in conns:
+            await self._safe_send_to(
+                connection, raw_nav, label=" navigation "
+            )
 
     async def send_delta(
         self,

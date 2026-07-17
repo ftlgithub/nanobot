@@ -36,6 +36,7 @@ from nanobot.webui.file_preview import (
 )
 from nanobot.webui.gateway_tokens import GatewayTokenStore, token_response_payload
 from nanobot.webui.http_utils import (
+    CORS_ALLOW_ALL as _cors_all,
     case_insensitive_header as _case_insensitive_header,
 )
 from nanobot.webui.http_utils import (
@@ -83,6 +84,7 @@ from nanobot.webui.session_automations import (
     session_automations_payload,
 )
 from nanobot.webui.session_list_index import list_webui_sessions
+from nanobot.webui.user_session_map import get_instance as get_user_map
 from nanobot.webui.sidebar_state import (
     read_webui_sidebar_state,
     write_webui_sidebar_state,
@@ -324,9 +326,9 @@ class GatewayHTTPHandler:
         is_local_browser = _is_local_browser_request(connection, request.headers)
         if secret:
             if not _issue_route_secret_matches(request.headers, secret):
-                return _http_error(401, "Unauthorized")
+                return _http_error(401, "Unauthorized", cors_origin=_cors_all)
         elif not is_local_browser:
-            return _http_error(403, "bootstrap is localhost-only")
+            return _http_error(403, "bootstrap is localhost-only", cors_origin=_cors_all)
 
         api_token_allowed = bool(secret) or is_local_browser
         if not self.tokens.can_issue(include_api_token=api_token_allowed):
@@ -334,6 +336,7 @@ class GatewayHTTPHandler:
                 json.dumps({"error": "too many outstanding tokens"}).encode("utf-8"),
                 status=429,
                 content_type="application/json; charset=utf-8",
+                cors_origin=_cors_all,
             )
         token = self.tokens.issue_token(self.config.token_ttl_s, audience="webui")
         api_token = (
@@ -358,7 +361,7 @@ class GatewayHTTPHandler:
         }
         if api_token is not None:
             payload["api_token"] = api_token
-        return _http_json_response(payload)
+        return _http_json_response(payload, cors_origin=_cors_all)
 
     def _bootstrap_ws_url(self, request: Any) -> str:
         headers = getattr(request, "headers", {}) or {}
@@ -403,6 +406,11 @@ class GatewayHTTPHandler:
         if self.session_manager is None:
             return _http_error(503, "session manager unavailable")
         payload = await asyncio.to_thread(self._sessions_list_payload)
+        user_id = _query_first(_parse_query(request.path), "user_id") or ""
+        if user_id:
+            payload["sessions"] = get_user_map().filter_sessions(
+                payload["sessions"], user_id
+            )
         return _http_json_response(payload)
 
     def _sessions_list_payload(self) -> dict[str, Any]:
@@ -566,6 +574,8 @@ class GatewayHTTPHandler:
                 elif self.cron_service is not None:
                     self.cron_service.remove_job(job.id)
         deleted = self.session_manager.delete_session(decoded_key)
+        if deleted:
+            get_user_map().dissociate(decoded_key)
         delete_webui_thread(decoded_key)
         return _http_json_response({"deleted": bool(deleted)})
 

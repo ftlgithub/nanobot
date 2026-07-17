@@ -62,16 +62,21 @@ def host_for_url(host: str, port: int) -> str:
     return f"{host}:{port}"
 
 
-def http_json_response(data: dict[str, Any], *, status: int = 200) -> Response:
+def http_json_response(
+    data: dict[str, Any],
+    *, status: int = 200,
+    cors_origin: str | None = None,
+) -> Response:
     body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-    headers = Headers(
-        [
-            ("Date", email.utils.formatdate(usegmt=True)),
-            ("Connection", "close"),
-            ("Content-Length", str(len(body))),
-            ("Content-Type", "application/json; charset=utf-8"),
-        ]
-    )
+    header_list: list[tuple[str, str]] = [
+        ("Date", email.utils.formatdate(usegmt=True)),
+        ("Connection", "close"),
+        ("Content-Length", str(len(body))),
+        ("Content-Type", "application/json; charset=utf-8"),
+    ]
+    if cors_origin:
+        header_list.append(("Access-Control-Allow-Origin", cors_origin))
+    headers = Headers(header_list)
     reason = http.HTTPStatus(status).phrase
     return Response(status, reason, headers, body)
 
@@ -82,22 +87,25 @@ def http_response(
     status: int = 200,
     content_type: str = "text/plain; charset=utf-8",
     extra_headers: list[tuple[str, str]] | None = None,
+    cors_origin: str | None = None,
 ) -> Response:
-    headers = [
+    header_list: list[tuple[str, str]] = [
         ("Date", email.utils.formatdate(usegmt=True)),
         ("Connection", "close"),
         ("Content-Length", str(len(body))),
         ("Content-Type", content_type),
     ]
+    if cors_origin:
+        header_list.append(("Access-Control-Allow-Origin", cors_origin))
     if extra_headers:
-        headers.extend(extra_headers)
+        header_list.extend(extra_headers)
     reason = http.HTTPStatus(status).phrase
-    return Response(status, reason, Headers(headers), body)
+    return Response(status, reason, Headers(header_list), body)
 
 
-def http_error(status: int, message: str | None = None) -> Response:
+def http_error(status: int, message: str | None = None, *, cors_origin: str | None = None) -> Response:
     body = (message or http.HTTPStatus(status).phrase).encode("utf-8")
-    return http_response(body, status=status)
+    return http_response(body, status=status, cors_origin=cors_origin)
 
 
 def parse_request_path(path_with_query: str) -> tuple[str, QueryParams]:
@@ -210,3 +218,6 @@ def issue_route_secret_matches(headers: Any, configured_secret: str) -> bool:
     if not header_token:
         return False
     return hmac.compare_digest(header_token.strip(), configured_secret)
+CORS_ALLOW_ALL = "*"
+
+
