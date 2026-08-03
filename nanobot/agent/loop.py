@@ -1264,6 +1264,9 @@ class AgentLoop:
                     ))
         elif result.stop_reason == "error":
             logger.error("LLM returned error: {}", (result.final_content or "")[:200])
+            # LLM 错误详情仅写入日志；不回显原始错误文本（如 "Error: {...}" JSON），
+            # 避免用户看到模型/API 原始异常输出
+            result.final_content = "模型服务暂时不可用，请稍后重试。"
         return result
 
     def _check_expired_sessions_if_due(self) -> None:
