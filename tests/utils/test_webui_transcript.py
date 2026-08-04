@@ -1589,6 +1589,35 @@ def test_replay_uses_stream_end_final_text() -> None:
     assert msgs[1]["content"] == "![Diagram](/api/media/sig/payload)"
 
 
+def test_replay_keeps_delta_after_media_message() -> None:
+    """媒体消息后的同一 turn 流式文字必须保留（回归：suppress_until_turn_end 曾连带丢弃）。"""
+    msgs = replay_transcript_to_ui_messages(
+        [
+            {"event": "user", "chat_id": "t-media", "text": "画柱状图"},
+            {"event": "delta", "chat_id": "t-media", "text": "表格数据"},
+            {"event": "stream_end", "chat_id": "t-media"},
+            {
+                "event": "message",
+                "chat_id": "t-media",
+                "text": "一楼档案室温湿度1 实时数据柱状图",
+                "media": ["/tmp/chart.svg"],
+                "media_urls": [{"url": "/api/media/sig/chart.svg", "name": "chart.svg"}],
+            },
+            {"event": "delta", "chat_id": "t-media", "text": "已生成柱状图并发送给你。"},
+            {"event": "stream_end", "chat_id": "t-media"},
+            {"event": "turn_end", "chat_id": "t-media"},
+        ],
+    )
+
+    assert [(m["role"], m["content"]) for m in msgs] == [
+        ("user", "画柱状图"),
+        ("assistant", "表格数据"),
+        ("assistant", "一楼档案室温湿度1 实时数据柱状图"),
+        ("assistant", "已生成柱状图并发送给你。"),
+    ]
+    assert msgs[2]["media"] == [{"kind": "image", "url": "/api/media/sig/chart.svg", "name": "chart.svg"}]
+
+
 def test_build_response_backfills_legacy_sse_only_transcripts(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("nanobot.config.paths.get_data_dir", lambda: tmp_path)
     key = "websocket:t-legacy"

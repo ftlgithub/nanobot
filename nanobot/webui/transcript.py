@@ -2723,8 +2723,6 @@ def replay_transcript_to_ui_messages(
             continue
 
         if ev == "delta":
-            if suppress_until_turn_end:
-                continue
             chunk = rec.get("text")
             if not isinstance(chunk, str):
                 continue
@@ -2764,10 +2762,6 @@ def replay_transcript_to_ui_messages(
             continue
 
         if ev == "stream_end":
-            if suppress_until_turn_end:
-                buffer_message_id = None
-                buffer_parts = []
-                continue
             merge_next = rec.get("resuming") is True and rec.get("merge_next") is True
             final_text = rec.get("text")
             turn_fields = _turn_fields(rec, "answer")
