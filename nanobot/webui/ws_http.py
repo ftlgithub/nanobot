@@ -44,9 +44,11 @@ from nanobot.webui.file_preview import (
 )
 from nanobot.webui.gateway_tokens import GatewayTokenStore, token_response_payload
 from nanobot.webui.http_utils import JSONResponseMetrics
+from nanobot.webui.http_utils import (
+    CORS_ALLOW_ALL,
+)
 from nanobot.webui.http_utils import accepts_gzip as _accepts_gzip
 from nanobot.webui.http_utils import (
-    CORS_ALLOW_ALL as _cors_all,
     case_insensitive_header as _case_insensitive_header,
 )
 from nanobot.webui.http_utils import (
@@ -112,7 +114,6 @@ from nanobot.webui.session_list_index import (
     indexed_workspace_scope,
     list_webui_sessions,
 )
-from nanobot.webui.user_session_map import get_instance as get_user_map
 from nanobot.webui.sidebar_state import (
     read_webui_sidebar_state,
     write_webui_sidebar_state,
@@ -138,6 +139,7 @@ from nanobot.webui.transcript import (
     build_webui_trace_detail_response,
     webui_transcript_revision,
 )
+from nanobot.webui.user_session_map import get_instance as get_user_map
 from nanobot.webui.workspaces import WebUIWorkspaceController
 
 _SLOW_WEBUI_HTTP_LOG_MS = 1_000
@@ -677,9 +679,9 @@ class GatewayHTTPHandler:
         if not is_proxy_authenticated:
             if secret:
                 if not _issue_route_secret_matches(request.headers, secret):
-                    return _http_error(401, "Unauthorized", cors_origin=_cors_all)
+                    return _http_error(401, "Unauthorized", cors_origin=CORS_ALLOW_ALL)
             elif not is_local_browser:
-                return _http_error(403, "bootstrap is localhost-only", cors_origin=_cors_all)
+                return _http_error(403, "bootstrap is localhost-only", cors_origin=CORS_ALLOW_ALL)
 
         terminal = {"protocolVersion": 1, "gatewayId": self.tokens.instance_id}
         if terminal_probe:
@@ -709,7 +711,7 @@ class GatewayHTTPHandler:
                 status=429,
                 content_type="application/json; charset=utf-8",
                 extra_headers=_NO_STORE_HEADERS,
-                cors_origin=_cors_all,
+                cors_origin=CORS_ALLOW_ALL,
             )
         token = self.tokens.issue_token(self.config.token_ttl_s, audience="webui")
         api_token = (
@@ -741,7 +743,7 @@ class GatewayHTTPHandler:
         return _http_json_response(
             payload,
             extra_headers=_NO_STORE_HEADERS,
-            cors_origin=_cors_all,
+            cors_origin=CORS_ALLOW_ALL,
         )
 
     def _bootstrap_ws_url(self, request: Any) -> str:
