@@ -566,7 +566,10 @@ async def test_streamed_flag_not_set_on_llm_error(tmp_path):
     )
 
     assert result is not None
-    assert "503" in result.content
+    # Fork behavior: raw LLM error text is masked with a friendly notice
+    # (local commit "fix(agent): hide raw LLM error text from user replies").
+    assert "503" not in result.content
+    assert "模型服务暂时不可用" in result.content
     assert not isinstance(result.event, StreamedResponseEvent), (
         "streamed response event must not be set when stop_reason is error"
     )
@@ -645,7 +648,10 @@ async def test_next_turn_after_llm_error_keeps_turn_boundary(tmp_path):
         InboundMessage(channel="cli", sender_id="user", chat_id="test", content="first question")
     )
     assert first is not None
-    assert first.content == "429 rate limit exceeded"
+    # Fork behavior: raw LLM error text is masked with a friendly notice
+    # (local commit "fix(agent): hide raw LLM error text from user replies").
+    assert first.content != "429 rate limit exceeded"
+    assert "模型服务暂时不可用" in first.content
 
     session = loop.sessions.get_or_create("cli:test")
     assert [
