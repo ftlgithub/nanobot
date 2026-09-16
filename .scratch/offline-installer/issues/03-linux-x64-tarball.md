@@ -1,0 +1,14 @@
+# 03 — Linux x64 tarball 全链路
+
+**What to build:** Linux x64（glibc 2.17+）可用的离线安装 tarball：在 docker 干净容器里解压安装，网关+WebUI 可跑，裸 `nanobot` 可进 TUI。
+
+**Blocked by:** 01 — 冻结依赖 + 定义瘦生产环境；04 — TUI 双平台预置
+
+**Status:** done
+
+- [ ] 独立 Python（x64）+ manylinux wheelhouse（按 lock 文件，`--no-index` 可装）
+- [ ] WebUI 前端已预构建（与 macOS 包同版 `nanobot/web/dist`）
+- [ ] TUI linux-x64 二进制已预置 `nanobot/tui/bin/`（来自 04）
+- [ ] `install.sh` 在 docker 干净容器（glibc 2.17+ 基准镜像）一键安装成功
+- [ ] 容器内验证：bootstrap→建会话→发消息→mutation 删除→health 全链路通过
+- [ ] 导入横扫通过（全顶层模块 + channel/tool discover）
