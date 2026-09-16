@@ -2,6 +2,11 @@
 
 基于 commit: `f0680687`, `bfc1a695`, `4d9b91f4`
 
+> **重要更新（2026-09-16）**: 本清单为**历史记录**，描述 fork 修改的原始形态。
+> fork 修改现已重构为 **fork 补丁层**（`nanobot/fork/` 包 + 上游文件的 `# FORK-HOOK` 调用点），
+> 权威清单见 **[`docs/fork-integration.md`](./fork-integration.md)**。
+> 当前基线：上游 **v0.3.5**（`1bb712d3`）+ 9 个本地提交。
+
 ---
 
 ## 1. CORS 支持 — Chrome 扩展直连 bootstrap 端点
@@ -225,16 +230,22 @@ if raw is not None:
 
 ## 文件变更统计
 
-| 文件 | 变更类型 | 新增行 | 修改行 | 删除行 |
-|------|----------|--------|--------|--------|
-| `nanobot/webui/http_utils.py` | 修改 | 14 | 12 | 10 |
-| `nanobot/webui/ws_http.py` | 修改 | 5 | 4 | 3 |
-| `nanobot/agent/loop.py` | 修改 | 26 | 1 | 1 |
-| `nanobot/channels/base.py` | 修改 | 7 | 0 | 0 |
-| `nanobot/channels/manager.py` | 修改 | 14 | 0 | 0 |
-| `nanobot/channels/websocket.py` | 修改 | 30 | 0 | 0 |
-| `nanobot/apps/cli/service.py` | 修改 | 14 | 0 | 0 |
-| `nanobot/skills/code-analyzer/SKILL.md` | **新建** | 183 | 0 | 0 |
-| **源码合计** | | **293** | **17** | **14** |
+> 统计基于上游 v0.3.5（`1bb712d3`）+ 9 个本地提交（2026-09-16 rebase 后）。
 
-*生成日期: 2026-07-03*
+| 文件 | 变更类型 | 说明 |
+|------|----------|------|
+| `nanobot/fork/`（5 文件） | **新建** | fork 补丁层：`navigation.py` / `llm_error.py` / `cors.py` / `user_session.py` / `__init__.py` |
+| `nanobot/webui/user_session_map.py` | **新建** | 用户↔会话关联映射（110 行） |
+| `nanobot/agent/loop.py` | 修改 | NAV 解析 + 错误掩蔽 → `parse_nav_marker()` / `mask_llm_error()` 调用点 |
+| `nanobot/channels/websocket/runtime.py` | 修改 | `fork-nav-dispatch` 导航事件分发 |
+| `nanobot/channels/manager.py` | 修改 | `fork-nav-send` 导航分发（2 处） |
+| `nanobot/webui/ws_http.py` | 修改 | CORS（`fork-cors-*`）+ 用户映射过滤/dissociate（`fork-user-map-*`） |
+| `nanobot/webui/http_utils.py` | 修改 | `cors_origin` 签名参数（CORS 常量已移至 `fork/cors.py`） |
+| `nanobot/webui/inbound_commands.py` | 修改 | `fork-user-map-associate`（new_chat 用户绑定） |
+| `nanobot/apps/cli/service.py` | 修改 | CLI App 本地安装回退 |
+| `nanobot/channels/base.py` | 修改 | `send_navigation()` 接口 |
+| `docs/fork-integration.md` | **新建** | 14 个 FORK-HOOK 锚点权威清单 |
+| `tests/fork/` + 导航分发测试 | **新建** | 纯函数 + 分发单测（14 个） |
+| **源码合计** | | 15 文件，322 插入 / 15 删除 |
+
+*生成日期: 2026-07-03 · 更新: 2026-09-16*
