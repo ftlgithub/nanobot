@@ -14,7 +14,11 @@ PYBIN="$PREFIX/python/bin/python"
 
 echo "==> Installing wheels (offline, no index)..."
 # --break-system-packages is safe here: this Python is bundled solely for nanobot.
+# Two steps: deps from the lock first, then the app --no-deps (tolerates
+# platform-specific pins that differ from the macOS lock, e.g. tiktoken).
 "$PYBIN" -m pip install --quiet --no-index --no-build-isolation --break-system-packages \
+  --find-links "$SCRIPT_DIR/wheelhouse" -r "$SCRIPT_DIR/requirements.txt"
+"$PYBIN" -m pip install --quiet --no-index --no-build-isolation --break-system-packages --no-deps \
   --find-links "$SCRIPT_DIR/wheelhouse" nanobot-ai
 
 SITE_PKGS=$("$PYBIN" -c "import site; print(site.getsitepackages()[0])")
