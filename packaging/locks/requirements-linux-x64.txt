@@ -123,7 +123,7 @@ openpyxl==3.1.5
     # via nanobot-ai (pyproject.toml)
 packaging==26.3
     # via nanobot-ai (pyproject.toml)
-pillow==12.3.0
+pillow==12.2.0  # manylinux2014 cap: 12.3.0+ needs glibc>=2.27
     # via
     #   python-pptx
     #   qrcode
@@ -172,7 +172,7 @@ qrcode==8.2
     # via nanobot-ai (pyproject.toml)
 questionary==2.1.1
     # via nanobot-ai (pyproject.toml)
-rapidfuzz==3.14.6
+rapidfuzz==3.13.0  # manylinux2014 cap: newer needs glibc>2.17
     # via nanobot-ai (pyproject.toml)
 readability-lxml==0.9
     # via nanobot-ai (pyproject.toml)
@@ -210,7 +210,7 @@ starlette==1.6.0
     # via
     #   mcp
     #   sse-starlette
-tiktoken==0.14.0
+tiktoken==0.11.0  # manylinux2014 cap: 0.12+ needs glibc>2.17; API-compatible (get_encoding cl100k_base)
     # via nanobot-ai (pyproject.toml)
 truststore==0.10.4
     # via
