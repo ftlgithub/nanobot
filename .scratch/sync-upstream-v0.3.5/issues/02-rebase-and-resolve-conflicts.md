@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — 准备升级环境
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `git rebase v0.3.5` 开始，10 个提交逐个重放
 - [ ] 每个冲突文件按 `docs/fork-integration.md` 核对锚点（`fork-nav-stream`/`fork-nav-persist`/`fork-err-mask`/`fork-nav-send`/`fork-nav-dispatch`/`fork-cors-*`/`fork-user-map-*`）

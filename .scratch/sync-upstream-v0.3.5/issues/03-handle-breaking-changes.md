@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — rebase 并解决全部冲突
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] 重启网关后，会话存储自动迁移到 `sessions/<workspace-id>/`，**旧会话内容保留**（列表可见、历史可加载）
 - [ ] 若迁移未自动发生：手动执行迁移或确认原因；降级预案 `nanobot sessions restore-workspace` 已了解

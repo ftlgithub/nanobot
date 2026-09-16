@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — 处理 v0.3.5 破坏性变更
 
-**Status:** ready-for-agent
+**Status:** done
 
 **自动化层：**
 - [ ] `pytest tests/` 失败集 ≤ 基线（已知：test_dream、tui_launcher + 可能的 mcp/web_fetch 网络波动），**无新增失败**

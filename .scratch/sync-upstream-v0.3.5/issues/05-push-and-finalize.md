@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — 三层验证全部通过
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] 提交所有 rebase 冲突解决的改动（如有）
 - [ ] `git push --force-with-lease origin main`（若 SSH 代理不通，记录待用户补推）

@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `git branch backup-main-before-v035` 已创建（指向 `3c37ddb2`）
 - [ ] `git fetch upstream tag v0.3.5` 成功（HTTPS 拉取，SSH 可能被代理阻断）
