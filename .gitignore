@@ -104,3 +104,8 @@ exp/
 bridge/node_modules/
 webui/.verify-*
 .playwright-cli/
+
+# Offline installer: pre-bundled TUI binaries (68MB, fetched from GitHub releases).
+# Manifest lives in packaging/tui-binaries/; binaries re-downloadable, not versioned.
+nanobot/tui/bin/nanobot-tui-*
+!nanobot/tui/bin/.gitkeep
