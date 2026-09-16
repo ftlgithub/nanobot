@@ -23,6 +23,9 @@ need() { command -v "$1" >/dev/null 2>&1 || { echo "missing: $1" >&2; exit 1; };
 # Fail fast on stale inputs: WebUI dist must be newer than all sources,
 # and both TUI zips must exist (see packaging/tui-binaries/README.md).
 check_inputs() {
+  if [ -n "$(git status --porcelain 2>/dev/null | grep -vE 'docx|\.omo' || true)" ] && [ "${ALLOW_DIRTY:-}" != "1" ]; then
+    echo "working tree is dirty: commit first (or set ALLOW_DIRTY=1 for test builds)" >&2; exit 1
+  fi
   if [ -n "$(find webui/src -newer nanobot/web/dist/index.html -type f 2>/dev/null | head -1)" ]; then
     echo "webui dist is stale: run 'cd webui && bun run build' first" >&2; exit 1
   fi

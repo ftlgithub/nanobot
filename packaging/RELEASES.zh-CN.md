@@ -2,6 +2,9 @@
 
 ## v0.3.5（2026-09-16，fork main ＋ 离线打包）
 
+源码版本：`84acc444`（`docs: packaging directory overview`）。
+安装包构建自该提交的干净工作区；同提交重打的包除内嵌时间戳外内容一致。
+
 | 平台 | 安装包 | 大小 | SHA-256 |
 |---|---|---|---|
 | macOS arm64 | `nanobot-offline-macos-arm64-v0.3.5.tar.gz` | 91 MB | `01c60555e480e5cff21e15562a4f5154aa515415c405b7c435fa81425c43d6ce` |

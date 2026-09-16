@@ -2,6 +2,10 @@
 
 ## v0.3.5 (2026-09-16, fork main + offline packaging)
 
+Source commit: `84acc444` (`docs: packaging directory overview`).
+Tarballs built from a clean tree at this commit; rebuilds from the same
+commit are byte-equivalent except for embedded timestamps.
+
 | Platform | Tarball | Size | SHA-256 |
 |---|---|---|---|
 | macOS arm64 | `nanobot-offline-macos-arm64-v0.3.5.tar.gz` | 91 MB | `01c60555e480e5cff21e15562a4f5154aa515415c405b7c435fa81425c43d6ce` |
