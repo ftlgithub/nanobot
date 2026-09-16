@@ -1,0 +1,40 @@
+# 离线安装包发版记录
+
+## v0.3.5（2026-09-16，fork main ＋ 离线打包）
+
+| 平台 | 安装包 | 大小 | SHA-256 |
+|---|---|---|---|
+| macOS arm64 | `nanobot-offline-macos-arm64-v0.3.5.tar.gz` | 91 MB | `b9193107e27257bd11471db55fc875fd9bad7bd549aa397fe11b8737b56c2609` |
+| Linux x64（glibc 2.17+） | `nanobot-offline-linux-x64-v0.3.5.tar.gz` | 203 MB | `371acc8a056af86b527f458c1fd760454ff17f9c629ac80d2b9237bcdeb2fd27` |
+
+安装包位于 `packaging/build/<平台>/`（git-ignored 构建产物，不入库）。
+
+### 包内容（每个平台包）
+
+- 独立 Python 3.12（macOS 用 uv 管理版；Linux 用 python-build-standalone `20260901`）＋ `install.sh`（两步 `--no-index` 安装）
+- 锁定版 wheelhouse（89 个 pin；Linux 侧 pillow 12.2.0／rapidfuzz 3.13.0／tiktoken 0.11.0 降级适配 manylinux2014，见 `packaging/locks/`）
+- 预构建 WebUI 前端（随包的 `nanobot/web/dist`，与当前源码一致）
+- 对应平台的 TUI 原生二进制（预置，避免运行时去 GitHub 下载）
+- `requirements.txt`（install.sh 使用的平台锁拷贝）
+
+### 验证结果（2026-09-16）
+
+- macOS：全新解压＋干净 HOME 安装 → `nanobot v0.3.5`，模块正常；网关冒烟（bootstrap → 建会话 → 发消息 → mutation 删除 → health）通过。
+- Linux：`ubuntu:22.04` amd64 容器、`--network none` 断网 → 安装成功；同样冒烟全链路通过（`deleted:true`，`health ok/running`）。
+- 导入横扫：324 个模块通过；7 个失败均为已知可选 extra（aiohttp/api、matrix、slack、telegram、Windows 专属），符合预期。
+
+### 已知限制
+
+- 未预装第三方 CLI App（如 dct-north-cli；`entry_point` 为机器绝对路径，需独立方案，待服务端用例确认）。
+- 暂无 macOS x64／Windows／Linux arm64 构建。
+- Linux 锁与 macOS 有 3 处版本差异（见上），运行时 API 已验证兼容。
+- macOS 打的 tar 包在 Linux 解压时会有 `LIBARCHIVE.xattr` 告警，无害，可忽略。
+
+### 安装方法
+
+```bash
+tar -xzf nanobot-offline-<平台>-v0.3.5.tar.gz
+bash nanobot-offline/install.sh ~/nanobot-offline   # 无需网络
+export PATH="$HOME/nanobot-offline/bin:$PATH"
+nanobot gateway   # 或 nanobot --help
+```
