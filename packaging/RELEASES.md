@@ -4,8 +4,8 @@
 
 | Platform | Tarball | Size | SHA-256 |
 |---|---|---|---|
-| macOS arm64 | `nanobot-offline-macos-arm64-v0.3.5.tar.gz` | 91 MB | `b9193107e27257bd11471db55fc875fd9bad7bd549aa397fe11b8737b56c2609` |
-| Linux x64 (glibc 2.17+) | `nanobot-offline-linux-x64-v0.3.5.tar.gz` | 203 MB | `371acc8a056af86b527f458c1fd760454ff17f9c629ac80d2b9237bcdeb2fd27` |
+| macOS arm64 | `nanobot-offline-macos-arm64-v0.3.5.tar.gz` | 91 MB | `01c60555e480e5cff21e15562a4f5154aa515415c405b7c435fa81425c43d6ce` |
+| Linux x64 (glibc 2.17+) | `nanobot-offline-linux-x64-v0.3.5.tar.gz` | 203 MB | `05c60cfa75b64e20f67c42df3303f80c2f8780a7e7e4d92ec8c7a0f4573edd19` |
 
 Tarballs live under `packaging/build/<platform>/` (git-ignored build output).
 
