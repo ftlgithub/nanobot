@@ -47,6 +47,7 @@ stage_common() { # $1=build_dir $2=lock-name $3=tui-asset
   mkdir -p "$dir/nanobot-offline/tui"
   cp packaging/install.sh "$dir/nanobot-offline/install.sh"
   cp "packaging/locks/$2" "$dir/nanobot-offline/requirements.txt"
+  cp packaging/INSTALL.zh-CN.md "$dir/nanobot-offline/安装说明.md"
 }
 
 build_macos() {
