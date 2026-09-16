@@ -1176,6 +1176,7 @@ class WebSocketChannel(BaseChannel):
     ) -> None:
         """Serialize one ordinary outbound message selected by the projector."""
         conns = list(self._subs.get(msg.chat_id, ()))
+        # FORK-HOOK: fork-nav-dispatch — see docs/fork-integration.md
         if msg.metadata.get("_navigation"):
             nav_data = msg.metadata["_navigation"]
             if conns:

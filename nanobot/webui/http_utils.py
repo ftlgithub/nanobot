@@ -328,6 +328,5 @@ def issue_route_secret_matches(headers: Any, configured_secret: str) -> bool:
     if not header_token:
         return False
     return hmac.compare_digest(header_token.strip(), configured_secret)
-CORS_ALLOW_ALL = "*"
 
 

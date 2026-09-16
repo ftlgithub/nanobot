@@ -927,6 +927,7 @@ class ChannelManager:
             await ChannelManager._send_stream_event(channel, msg, event)
         elif isinstance(event, StreamEndEvent):
             await ChannelManager._send_stream_event(channel, msg, event)
+            # FORK-HOOK: fork-nav-send — see docs/fork-integration.md
             # Stream-end messages may carry _navigation metadata.
             # send_delta() does not check for it, so dispatch here.
             if msg.metadata.get("_navigation"):
@@ -936,6 +937,7 @@ class ChannelManager:
                     nav if isinstance(nav, dict) else {},
                 )
         elif isinstance(event, StreamedResponseEvent) and msg.metadata.get("_navigation"):
+            # FORK-HOOK: fork-nav-send — see docs/fork-integration.md
             # Content already delivered via streaming deltas.
             # Only dispatch the navigation command.
             nav = msg.metadata["_navigation"]

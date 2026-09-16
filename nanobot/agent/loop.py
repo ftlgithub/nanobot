@@ -7,9 +7,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import inspect
-import json
 import os
-import re
 import time
 import weakref
 from collections.abc import Coroutine, Iterable, Mapping
@@ -62,6 +60,8 @@ from nanobot.command import CommandContext, CommandRouter, register_builtin_comm
 from nanobot.command.router import normalize_command_text
 from nanobot.config.schema import AgentDefaults, ModelPresetConfig
 from nanobot.events import NO_EVENTS, AgentEvent, EventSink
+from nanobot.fork.llm_error import mask_llm_error
+from nanobot.fork.navigation import parse_nav_marker
 from nanobot.llm_usage.context import source_from_request
 from nanobot.providers.base import LLMProvider, LLMUsage, ProviderConversationState
 from nanobot.providers.factory import ProviderSnapshot
@@ -1243,14 +1243,8 @@ class AgentLoop:
                     if result.pending_stream_content is not None
                     else result.final_content or ""
                 )
-                _nav_d = None
-                _nav_m = re.search(r'<!--NAV:(.*?)-->', stream_content)
-                if _nav_m:
-                    try:
-                        _nav_d = json.loads(_nav_m.group(1))
-                        stream_content = (stream_content[:_nav_m.start()] + stream_content[_nav_m.end():]).strip()
-                    except json.JSONDecodeError:
-                        pass
+                # FORK-HOOK: fork-nav-stream — see docs/fork-integration.md
+                _nav_d, stream_content = parse_nav_marker(stream_content)
                 await events.publish(StreamDeltaEvent(content=stream_content))
                 await events.publish(StreamEndEvent())
                 if _nav_d:
@@ -1264,9 +1258,8 @@ class AgentLoop:
                     ))
         elif result.stop_reason == "error":
             logger.error("LLM returned error: {}", (result.final_content or "")[:200])
-            # LLM 错误详情仅写入日志；不回显原始错误文本（如 "Error: {...}" JSON），
-            # 避免用户看到模型/API 原始异常输出
-            result.final_content = "模型服务暂时不可用，请稍后重试。"
+            # FORK-HOOK: fork-err-mask — see docs/fork-integration.md
+            result.final_content = mask_llm_error(result.final_content)
         return result
 
     def _check_expired_sessions_if_due(self) -> None:
@@ -1760,16 +1753,10 @@ class AgentLoop:
         if turn_latency_ms is not None:
             meta["latency_ms"] = int(turn_latency_ms)
 
-        # 检测并剥离导航标记，注入 metadata
-        nav_match = re.search(r'<!--NAV:(.*?)-->', final_content)
-        if nav_match:
-            try:
-                nav_data = json.loads(nav_match.group(1))
-                meta["_navigation"] = nav_data
-                final_content = (final_content[:nav_match.start()]
-                                 + final_content[nav_match.end():]).strip()
-            except json.JSONDecodeError:
-                pass
+        # FORK-HOOK: fork-nav-persist — see docs/fork-integration.md
+        nav_data, final_content = parse_nav_marker(final_content)
+        if nav_data is not None:
+            meta["_navigation"] = nav_data
 
         return OutboundMessage(
             channel=msg.channel,

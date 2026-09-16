@@ -29,6 +29,10 @@ from websockets.http11 import Response
 from nanobot.command.builtin import builtin_command_palette
 from nanobot.cron.session_turns import is_bound_cron_job
 from nanobot.cron.types import CronJob, CronSchedule
+from nanobot.fork import get_user_map
+
+# FORK-HOOK: fork-cors-constant — see docs/fork-integration.md
+from nanobot.fork.cors import CORS_ALLOW_ALL
 from nanobot.security.workspace_access import WorkspaceScope
 from nanobot.session.manager import SessionManager
 from nanobot.session.recovery import RecoveryActionError
@@ -44,9 +48,6 @@ from nanobot.webui.file_preview import (
 )
 from nanobot.webui.gateway_tokens import GatewayTokenStore, token_response_payload
 from nanobot.webui.http_utils import JSONResponseMetrics
-from nanobot.webui.http_utils import (
-    CORS_ALLOW_ALL,
-)
 from nanobot.webui.http_utils import accepts_gzip as _accepts_gzip
 from nanobot.webui.http_utils import (
     case_insensitive_header as _case_insensitive_header,
@@ -139,7 +140,6 @@ from nanobot.webui.transcript import (
     build_webui_trace_detail_response,
     webui_transcript_revision,
 )
-from nanobot.webui.user_session_map import get_instance as get_user_map
 from nanobot.webui.workspaces import WebUIWorkspaceController
 
 _SLOW_WEBUI_HTTP_LOG_MS = 1_000
@@ -679,8 +679,10 @@ class GatewayHTTPHandler:
         if not is_proxy_authenticated:
             if secret:
                 if not _issue_route_secret_matches(request.headers, secret):
+                    # FORK-HOOK: fork-cors-bootstrap — see docs/fork-integration.md
                     return _http_error(401, "Unauthorized", cors_origin=CORS_ALLOW_ALL)
             elif not is_local_browser:
+                # FORK-HOOK: fork-cors-bootstrap — see docs/fork-integration.md
                 return _http_error(403, "bootstrap is localhost-only", cors_origin=CORS_ALLOW_ALL)
 
         terminal = {"protocolVersion": 1, "gatewayId": self.tokens.instance_id}
@@ -706,6 +708,7 @@ class GatewayHTTPHandler:
 
         api_token_allowed = bool(secret) or is_local_browser
         if not self.tokens.can_issue(include_api_token=api_token_allowed):
+            # FORK-HOOK: fork-cors-bootstrap — see docs/fork-integration.md
             return _http_response(
                 json.dumps({"error": "too many outstanding tokens"}).encode("utf-8"),
                 status=429,
@@ -740,6 +743,7 @@ class GatewayHTTPHandler:
         }
         if api_token is not None:
             payload["api_token"] = api_token
+        # FORK-HOOK: fork-cors-bootstrap — see docs/fork-integration.md
         return _http_json_response(
             payload,
             extra_headers=_NO_STORE_HEADERS,
@@ -847,6 +851,7 @@ class GatewayHTTPHandler:
             return _http_error(503, "session manager unavailable")
         payload = await asyncio.to_thread(self._sessions_list_payload)
         user_id = _query_first(_parse_query(request.path), "user_id") or ""
+        # FORK-HOOK: fork-user-map-filter — see docs/fork-integration.md
         if user_id:
             payload["sessions"] = get_user_map().filter_sessions(
                 payload["sessions"], user_id
@@ -1200,6 +1205,7 @@ class GatewayHTTPHandler:
                     self.cron_service.remove_job(job.id)
         draft_deleted = self.workspaces.discard_draft_scope(decoded_key)
         session_deleted = self.session_manager.delete_session(decoded_key)
+        # FORK-HOOK: fork-user-map-dissociate — see docs/fork-integration.md
         if session_deleted:
             get_user_map().dissociate(decoded_key)
         transcript_deleted = delete_webui_thread(decoded_key)
