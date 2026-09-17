@@ -340,11 +340,20 @@ def main(argv: list[str] | None = None) -> int:
         log(f"data dir:  {data_dir}")
 
         log("==> installing internal CLI wheels")
-        wheels = sorted((assets / "wheels").glob("*.whl"))
+        # Ignore AppleDouble metadata (._x.whl) that macOS tar can embed:
+        # pip would parse it as a bogus requirement and fail.
+        wheels = sorted(
+            w for w in (assets / "wheels").glob("*.whl") if not w.name.startswith("._")
+        )
         if not wheels:
             raise InstallError(f"no wheels staged in {assets / 'wheels'}")
         for app in CLI_APPS:
-            if app["wheel_glob"] and not list((assets / "wheels").glob(app["wheel_glob"])):
+            matches = [
+                w
+                for w in (assets / "wheels").glob(app["wheel_glob"] or "")
+                if not w.name.startswith("._")
+            ]
+            if app["wheel_glob"] and not matches:
                 raise InstallError(f"missing wheel for {app['name']} ({app['wheel_glob']})")
         pip_install(pybin, wheels, args.dry_run)
         summary["steps"].append("wheels")

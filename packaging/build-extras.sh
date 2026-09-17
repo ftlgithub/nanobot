@@ -8,6 +8,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# macOS tar must not embed AppleDouble (._*) metadata: it lands in the
+# package and breaks the installer's wheel glob (pip sees "._x.whl").
+export COPYFILE_DISABLE=1
+
 EXTRAS="packaging/extras"
 ASSETS="$EXTRAS/assets"
 OUT="packaging/build/extras"

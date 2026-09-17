@@ -51,6 +51,7 @@ find "$ASSETS" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null 
 find "$ASSETS" -name "*.pyc" -delete 2>/dev/null || true
 find "$ASSETS" -name "*.pyo" -delete 2>/dev/null || true
 find "$ASSETS" -name ".DS_Store" -delete 2>/dev/null || true
+find "$ASSETS" -name "._*" -delete 2>/dev/null || true
 find "$ASSETS" -name ".git" -type d -prune -exec rm -rf {} + 2>/dev/null || true
 find "$ASSETS" -name "node_modules" -type d -prune -exec rm -rf {} + 2>/dev/null || true
 find "$ASSETS" -name ".env" -delete 2>/dev/null || true
@@ -63,6 +64,9 @@ if find "$ASSETS" \( -name "*.so" -o -name "*.dylib" -o -name "*.pyd" -o -name "
 fi
 if find "$ASSETS" \( -name "*.pyc" -o -name "__pycache__" -o -name ".git" \) | head -1 | grep -q .; then
   die "cruft still present after cleaning"
+fi
+if find "$ASSETS" -name "._*" | head -1 | grep -q .; then
+  die "AppleDouble (._*) files still present — they break wheel globbing"
 fi
 if find "$ASSETS" \( -name ".env" -o -name "*.env" \) | head -1 | grep -q .; then
   die "credential file (.env) still present — refusing to stage"
