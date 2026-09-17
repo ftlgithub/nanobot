@@ -2,13 +2,16 @@
 
 ## v0.3.5（2026-09-16，fork main ＋ 离线打包）
 
-源码版本：`84acc444`（`docs: packaging directory overview`）。
-安装包构建自该提交的干净工作区；同提交重打的包除内嵌时间戳外内容一致。
+源码版本：`0d4925e5`（`build: reject dirty worktree in build.sh; record source commit in releases`），构建自该提交的干净工作区。
+
+> **哈希是「单次构建产物」的标识，不是「某 commit」的标识。** 同一 commit 重打磨
+> 会产生不同 SHA-256（体积也会略有差异），因为应用 wheel 内嵌构建时间戳。下表只
+> 标识某个具体产物；每次重打都必须重新验证并更新记录。
 
 | 平台 | 安装包 | 大小 | SHA-256 |
 |---|---|---|---|
-| macOS arm64 | `nanobot-offline-macos-arm64-v0.3.5.tar.gz` | 91 MB | `01c60555e480e5cff21e15562a4f5154aa515415c405b7c435fa81425c43d6ce` |
-| Linux x64（glibc 2.17+） | `nanobot-offline-linux-x64-v0.3.5.tar.gz` | 203 MB | `05c60cfa75b64e20f67c42df3303f80c2f8780a7e7e4d92ec8c7a0f4573edd19` |
+| macOS arm64 | `nanobot-offline-macos-arm64-v0.3.5.tar.gz` | 86 MB | `5c2e3b0eed6cb14dbbc56d4369e0d2cd3cd76ceba2b43bdc95791dc71dab8004` |
+| Linux x64（glibc 2.17+） | `nanobot-offline-linux-x64-v0.3.5.tar.gz` | 194 MB | `ba37cf50b1d7008f070c14ff802fdcbaf27493fb839272aea0b471a0e9c3f956` |
 
 安装包位于 `packaging/build/<平台>/`（git-ignored 构建产物，不入库）。
 

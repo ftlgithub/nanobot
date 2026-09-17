@@ -2,14 +2,18 @@
 
 ## v0.3.5 (2026-09-16, fork main + offline packaging)
 
-Source commit: `84acc444` (`docs: packaging directory overview`).
-Tarballs built from a clean tree at this commit; rebuilds from the same
-commit are byte-equivalent except for embedded timestamps.
+Source commit: `0d4925e5` (`build: reject dirty worktree in build.sh; record source commit in releases`).
+Built from a clean tree at this commit.
+
+> **Hashes are per-artifact, not per-commit.** Rebuilds of the same commit
+> produce different SHA-256 (and slightly different sizes) because the app
+> wheel embeds a build timestamp. Treat the table below as identifying one
+> specific built artifact; rebuilds must be re-verified and re-recorded.
 
 | Platform | Tarball | Size | SHA-256 |
 |---|---|---|---|
-| macOS arm64 | `nanobot-offline-macos-arm64-v0.3.5.tar.gz` | 91 MB | `01c60555e480e5cff21e15562a4f5154aa515415c405b7c435fa81425c43d6ce` |
-| Linux x64 (glibc 2.17+) | `nanobot-offline-linux-x64-v0.3.5.tar.gz` | 203 MB | `05c60cfa75b64e20f67c42df3303f80c2f8780a7e7e4d92ec8c7a0f4573edd19` |
+| macOS arm64 | `nanobot-offline-macos-arm64-v0.3.5.tar.gz` | 86 MB | `5c2e3b0eed6cb14dbbc56d4369e0d2cd3cd76ceba2b43bdc95791dc71dab8004` |
+| Linux x64 (glibc 2.17+) | `nanobot-offline-linux-x64-v0.3.5.tar.gz` | 194 MB | `ba37cf50b1d7008f070c14ff802fdcbaf27493fb839272aea0b471a0e9c3f956` |
 
 Tarballs live under `packaging/build/<platform>/` (git-ignored build output).
 
