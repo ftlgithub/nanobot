@@ -135,3 +135,78 @@ rm -rf ~/nanobot-offline
 - 仅 macOS arm64、Linux x64（glibc 2.17+）；无 Windows、无 Linux arm64 构建。
 - 未预装 websocket 之外的渠道依赖；第三方 CLI App 需另行部署。
 - Linux 侧 3 个编译包降级适配 manylinux2014（pillow 12.2.0、rapidfuzz 3.13.0、tiktoken 0.11.0），行为已验证兼容。
+
+## 9. 全新安装（含 extras，独立于现有环境）
+
+适用于：目标机已有 nanobot 在跑，但要另起一套完全隔离的实例（不同目录、不同端口、不同数据）。
+
+### 9.1 规划
+
+| 项 | 说明 | 示例 |
+|---|---|---|
+| 程序目录 | 主包安装位置 | `~/nanobot-offline` |
+| 数据目录 | 配置/workspace/会话/MCP，全新 | `~/nanobot-fresh`（内含 `config.json`、`workspace/`） |
+| 网关端口 | 避开现运行实例 | `18831`（现实例用 18790） |
+| WS 端口 | 避开现运行实例 | `18832`（现实例用 8765） |
+
+**铁律**：两个网关实例**禁止**共享 workspace（会话 JSONL + sqlite 并发写会坏），也**禁止**复用同一对端口。
+
+### 9.2 安装主包
+
+```bash
+tar -xzf nanobot-offline-<平台>-v0.3.5.tar.gz
+bash nanobot-offline/install.sh ~/nanobot-offline
+export PATH="$HOME/nanobot-offline/bin:$PATH"
+```
+
+### 9.3 写全新配置
+
+```bash
+mkdir -p ~/nanobot-fresh/workspace
+cat > ~/nanobot-fresh/config.json << 'EOF'
+{
+  "gateway": {"host": "127.0.0.1", "port": 18831},
+  "channels": {"websocket": {"enabled": true, "host": "127.0.0.1", "port": 18832}}
+}
+EOF
+```
+
+provider/模型按 §3.2 另行配置（云端 key 或本地 OpenAI 兼容端点）。
+
+### 9.4 安装 extras
+
+```bash
+tar -xzf nanobot-extras-v0.3.5.tar.gz
+bash nanobot-extras-v0.3.5/install-extras.sh ~/nanobot-offline ~/nanobot-fresh/workspace
+```
+
+说明：
+- 第二个参数是 workspace（skill 装到 `<workspace>/skills/`）；不传则自动探测，可能指到错误的 workspace，**多实例场景建议显式传参**
+- 脚本幂等，可重跑；改写 `config.json` 前自动备份（`config.json.bak-<时间戳>`）
+- `.sh` 只是薄包装，实际逻辑在包内 `installer.py`（`--dry-run` 可先演练）
+- CLI 入口软链到 `<prefix>/bin`，该目录必须在 PATH 上，否则 `run_cli_app` 报 "not available on PATH"
+- skill 按 workspace 存放：换 `--workspace` 启动的实例看不到，需对新 workspace 重跑一次
+
+### 9.5 启动与验证
+
+```bash
+nanobot gateway --foreground --port 18831 \
+  --workspace ~/nanobot-fresh/workspace \
+  --config ~/nanobot-fresh/config.json
+```
+
+验证清单（全部通过才算成功）：
+1. `curl http://127.0.0.1:18832/webui/bootstrap` → 200
+2. WebSocket 建会话 → 发消息 → `session.delete` → `{"deleted":true}`
+3. `curl http://127.0.0.1:18831/health` → `ok`
+4. `run_cli_app` 调起三个 CLI（`dct-north-cli`、`cli-anything-asset-historical-data`、`chart`）
+5. `list_skills` 含 6 个预期 skill，无重复
+6. 网关日志出现 `MCP server 'fastgpt-knowledge': connected`（**MCP 需重启网关或 reload 才生效**，装完不重启看不到）
+
+### 9.6 停止与清理
+
+```bash
+# 停网关（找到对应 --port 的进程后 kill，或用 gateway stop）
+# 删程序与数据即完全卸载（自包含，无系统残留）
+rm -rf ~/nanobot-offline ~/nanobot-fresh
+```
