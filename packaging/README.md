@@ -34,3 +34,10 @@
 （bootstrap → 建会话 → 发消息 → mutation 删除 → health）＋导入横扫。
 macOS 用干净 HOME，Linux 用 docker 断网容器。历史验证记录见
 `RELEASES.md`／`.scratch/offline-installer/issues/05-*`。
+
+## 后续可选项（已评估，暂缓）
+
+| 项 | 现状 | 触发条件 |
+|---|---|---|
+| 可复现构建 | **不做**。`RELEASES.md` 里的哈希标识单次产物而非 commit（应用 wheel 内嵌构建时间戳，同 commit 重打磨哈希/体积会变）。分发校验用 `SHA256SUMS` 比对收到的那份文件即可，不依赖可复现。 | 需要对外分发、过供应链审计，或要求"重打必得同哈希"时 |
+| `BUILD-INFO.txt` | **未加**。包内无自描述构建来源，只拿 tarball 无法确定对应 commit（需配合 `RELEASES.md`）。 | 包与其发版记录可能分离分发时。加它是 20 行脚本：记录 source_commit / build_date / lock 哈希 / app wheel 哈希 / TUI 哈希 |
