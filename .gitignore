@@ -109,3 +109,8 @@ webui/.verify-*
 # Manifest lives in packaging/tui-binaries/; binaries re-downloadable, not versioned.
 nanobot/tui/bin/*
 !nanobot/tui/bin/.gitkeep
+
+# Offline extras: internal assets (skills with internal IPs/GUIDs, MCP credentials,
+# internal CLI wheels) must not reach the GitHub remote. Stage locally instead:
+#   packaging/extras/stage-assets.sh
+packaging/extras/assets/
