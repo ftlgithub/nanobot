@@ -348,13 +348,16 @@ def main(argv: list[str] | None = None) -> int:
         if not wheels:
             raise InstallError(f"no wheels staged in {assets / 'wheels'}")
         for app in CLI_APPS:
+            pattern = app["wheel_glob"]
+            if not pattern:
+                continue
             matches = [
                 w
-                for w in (assets / "wheels").glob(app["wheel_glob"] or "")
+                for w in (assets / "wheels").glob(pattern)
                 if not w.name.startswith("._")
             ]
-            if app["wheel_glob"] and not matches:
-                raise InstallError(f"missing wheel for {app['name']} ({app['wheel_glob']})")
+            if not matches:
+                raise InstallError(f"missing wheel for {app['name']} ({pattern})")
         pip_install(pybin, wheels, args.dry_run)
         summary["steps"].append("wheels")
 
