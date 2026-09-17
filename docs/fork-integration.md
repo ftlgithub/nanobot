@@ -52,6 +52,19 @@ Every hook id below must appear exactly once per call site in the codebase.
 
 ### CLI app catalog (offline)
 
+**Background — two data sources behind `get_app()`:**
+
+| | 目录（catalog） | `installed.json` |
+|---|---|---|
+| 比喻 | 应用商店货架 | 本机已安装清单 |
+| 位置 | 3 个远端 JSON（本地有 `*_registry_cache.json` 缓存副本） | 本机 `<data>/cli-apps/installed.json` |
+| 内容 | 79 个**可装** App 描述（`name`/`display_name`/`category`/`entry_point`/`skill_md`/`version`…） | 本机**已装** App 记录（含安装路径、时间） |
+| 注册表 | `harness` + `public`（必需，拉取失败即抛错）+ `extensions`（可选） | — |
+
+`get_app()` 先逛商店（目录），找不到再看家里（`installed.json` 本地回退）。
+内部 App（`dct-north-cli` 等）**只存在于家里、不在任何货架上**——
+所以断网 + 无缓存时目录一崩，`get_app` 就到不了本地回退（下面这条 hook 修的正是这个）。
+
 | Hook id | File | Anchor | Purpose |
 |---|---|---|---|
 | `fork-cli-apps-offline-catalog` | `nanobot/apps/cli/service.py` | `try: remote_apps = self.catalog(...) except Exception: remote_apps = []` in `get_app()` | Let a fully offline host (no registry cache, no network) resolve locally-installed CLI apps instead of raising before the local fallback |
