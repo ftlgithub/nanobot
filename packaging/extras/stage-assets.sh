@@ -43,18 +43,32 @@ for s in "${SKILLS[@]}"; do cp -r "$SKILL_SRC/$s" "$ASSETS/skills/$s"; done
 echo "==> copying MCP server"
 cp -r "$MCP_SRC/fastgpt-knowledge" "$ASSETS/mcp/fastgpt-knowledge"
 
-echo "==> cleaning cruft (.git/__pycache__/*.pyc/.DS_Store)"
+echo "==> cleaning cruft and sensitive files"
+# Skills ship their own .gitignore documenting what must not leave the machine
+# (e.g. dynamic-monitor/.env holds site URL/username/password, alert-analysis
+# output/ holds generated alert data packages). Honour those exclusions here.
 find "$ASSETS" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
 find "$ASSETS" -name "*.pyc" -delete 2>/dev/null || true
+find "$ASSETS" -name "*.pyo" -delete 2>/dev/null || true
 find "$ASSETS" -name ".DS_Store" -delete 2>/dev/null || true
 find "$ASSETS" -name ".git" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+find "$ASSETS" -name "node_modules" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+find "$ASSETS" -name ".env" -delete 2>/dev/null || true
+find "$ASSETS" -name "*.env" -delete 2>/dev/null || true
+find "$ASSETS" -type d -name "output" -prune -exec rm -rf {} + 2>/dev/null || true
 
-echo "==> verifying (no platform binaries allowed)"
+echo "==> verifying (no platform binaries, no cruft, no credentials)"
 if find "$ASSETS" \( -name "*.so" -o -name "*.dylib" -o -name "*.pyd" -o -name "*.exe" \) | head -1 | grep -q .; then
   die "platform binaries found — the single cross-platform bundle assumption is broken"
 fi
 if find "$ASSETS" \( -name "*.pyc" -o -name "__pycache__" -o -name ".git" \) | head -1 | grep -q .; then
   die "cruft still present after cleaning"
+fi
+if find "$ASSETS" \( -name ".env" -o -name "*.env" \) | head -1 | grep -q .; then
+  die "credential file (.env) still present — refusing to stage"
+fi
+if find "$ASSETS" -type d -name output | head -1 | grep -q .; then
+  die "run artifacts (output/) still present — refusing to stage"
 fi
 
 echo "==> writing manifest"
