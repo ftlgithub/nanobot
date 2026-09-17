@@ -15,6 +15,23 @@
 
 安装包位于 `packaging/build/<平台>/`（git-ignored 构建产物，不入库）。
 
+### Extras 包（内部 CLI / skill / MCP）
+
+与主包**同版本配套**；**跨平台**（内容全为纯 Python/markdown，无平台二进制）。
+
+| 安装包 | 大小 | SHA-256 |
+|---|---|---|
+| `nanobot-extras-v0.3.5.tar.gz` | 198 KB | `79f55fb5530b8c7c4657f683e0ebcc4b5be22ab6704571b8c7790df4997a3857` |
+
+构建自源码版本 `82373448`，包内自带 `BUILD-INFO.txt`。产物位于
+`packaging/build/extras/`（git-ignored）。**资产不入库**（含内网 IP/GUID 与 MCP 凭据，
+且本仓库有 GitHub 远端）——用 `packaging/extras/stage-assets.sh` 重建资产，
+再跑 `packaging/build-extras.sh` 组包。
+
+安装：`bash install-extras.sh <nanobot前缀> <workspace>`（离线）。
+内容：3 个 CLI App（`dct-north-cli`、`cli-anything-asset-historical-data`、`chart`）、
+6 个 skill、`fastgpt-knowledge` MCP server。
+
 ### 包内容（每个平台包）
 
 - 独立 Python 3.12（macOS 用 uv 管理版；Linux 用 python-build-standalone `20260901`）＋ `install.sh`（两步 `--no-index` 安装）

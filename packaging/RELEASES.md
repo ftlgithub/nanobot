@@ -17,6 +17,25 @@ Built from a clean tree at this commit.
 
 Tarballs live under `packaging/build/<platform>/` (git-ignored build output).
 
+### Extras bundle (internal CLI / skills / MCP)
+
+Same version as the main package; **cross-platform** (all assets are pure
+Python/markdown, no platform binaries).
+
+| Tarball | Size | SHA-256 |
+|---|---|---|
+| `nanobot-extras-v0.3.5.tar.gz` | 198 KB | `79f55fb5530b8c7c4657f683e0ebcc4b5be22ab6704571b8c7790df4997a3857` |
+
+Built from source commit `82373448`; carries its own `BUILD-INFO.txt`.
+Lives under `packaging/build/extras/` (git-ignored). Assets are **not**
+versioned (internal IPs/GUIDs + MCP credentials, and this repo has a GitHub
+remote) — reproduce them with `packaging/extras/stage-assets.sh`, then
+`packaging/build-extras.sh`.
+
+Install: `bash install-extras.sh <nanobot-prefix> <workspace>` (offline).
+Contents: 3 CLI Apps (`dct-north-cli`, `cli-anything-asset-historical-data`,
+`chart`), 6 skills, the `fastgpt-knowledge` MCP server.
+
 ### Contents (per tarball)
 
 - Standalone Python 3.12 (uv-managed build for macOS; python-build-standalone
