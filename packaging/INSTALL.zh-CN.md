@@ -210,3 +210,17 @@ nanobot gateway --foreground --port 18831 \
 # 删程序与数据即完全卸载（自包含，无系统残留）
 rm -rf ~/nanobot-offline ~/nanobot-fresh
 ```
+
+### 9.7 CLI 自身配置是共享的（非隔离项）
+
+nanobot 侧（config/workspace/sessions）已隔离，但 CLI App 各自的配置文件**不在** nanobot 数据目录内，而是按操作系统用户 HOME 存放——多实例（含全新安装）读的是**同一份**：
+
+| CLI | 配置路径 | 内容 |
+|---|---|---|
+| `dct-north-cli` | `~/.dct-north-cli/config.json` | `host`、`token` |
+| `cli-anything-asset-historical-data` | `~/.config/cli-anything-asset-historical-data/config.json` | `mbus_url`、`host`、`token` 等 |
+
+影响：
+- **读操作无感**：全新实例不需重配 host/token，直接能查（这是符合预期的便利，不是 bug）
+- **写操作互通**：任一实例改 host/token（或 CLI 写缓存，如 `cache_config.json`），另一实例立刻生效；排障时注意"改的到底是哪份"
+- **真要完全隔离**：给新实例单独设 `HOME` 再启动网关（如 `HOME=/tmp/x nanobot gateway ...`），CLI 会认为无配置。代价是 nanobot 自身的数据目录解析也受 HOME 影响，需配套指定 `--config`/`--workspace`
