@@ -2,7 +2,7 @@
 
 ## v0.3.5 (2026-09-16, fork main + offline packaging)
 
-Source commit: `0d4925e5` (`build: reject dirty worktree in build.sh; record source commit in releases`).
+Source commit: `690bd530` (`build: reject dirty worktree in build.sh; record source commit in releases`).
 Built from a clean tree at this commit.
 
 > **Hashes are per-artifact, not per-commit.** Rebuilds of the same commit
@@ -12,8 +12,8 @@ Built from a clean tree at this commit.
 
 | Platform | Tarball | Size | SHA-256 |
 |---|---|---|---|
-| macOS arm64 | `nanobot-offline-macos-arm64-v0.3.5.tar.gz` | 86 MB | `5c2e3b0eed6cb14dbbc56d4369e0d2cd3cd76ceba2b43bdc95791dc71dab8004` |
-| Linux x64 (glibc 2.17+) | `nanobot-offline-linux-x64-v0.3.5.tar.gz` | 194 MB | `ba37cf50b1d7008f070c14ff802fdcbaf27493fb839272aea0b471a0e9c3f956` |
+| macOS arm64 | `nanobot-offline-macos-arm64-v0.3.5.tar.gz` | 86 MB | `05949ba9880118a70fbd6d9d4c4517eba0439240614247d4af6a2ca71a79a013` |
+| Linux x64 (glibc 2.17+) | `nanobot-offline-linux-x64-v0.3.5.tar.gz` | 194 MB | `51bc62c0ff84bb8bac8c3c9a04db3b0e7ead526ae3cfd0561fd3e8fc894f1127` |
 
 Tarballs live under `packaging/build/<platform>/` (git-ignored build output).
 
@@ -24,9 +24,9 @@ Python/markdown, no platform binaries).
 
 | Tarball | Size | SHA-256 |
 |---|---|---|
-| `nanobot-extras-v0.3.5.tar.gz` | 198 KB | `79f55fb5530b8c7c4657f683e0ebcc4b5be22ab6704571b8c7790df4997a3857` |
+| `nanobot-extras-v0.3.5.tar.gz` | 198 KB | `84cdae62b8d21cf6353333679afe184e85c279600d2ca49f51b6930270807ef0` |
 
-Built from source commit `82373448`; carries its own `BUILD-INFO.txt`.
+Built from source commit `690bd530`; carries its own `BUILD-INFO.txt`.
 Lives under `packaging/build/extras/` (git-ignored). Assets are **not**
 versioned (internal IPs/GUIDs + MCP credentials, and this repo has a GitHub
 remote) — reproduce them with `packaging/extras/stage-assets.sh`, then
@@ -46,7 +46,7 @@ Contents: 3 CLI Apps (`dct-north-cli`, `cli-anything-asset-historical-data`,
 - Prebundled TUI native binary for the matching platform
 - `requirements.txt` (platform lock copy used by `install.sh`)
 
-### Verification (2026-09-16)
+### Verification (2026-09-17)
 
 - macOS: fresh-extract + clean-HOME install → `nanobot v0.3.5`, modules OK;
   gateway smoke (bootstrap → new_chat → message → session.delete →
@@ -55,10 +55,23 @@ Contents: 3 CLI Apps (`dct-north-cli`, `cli-anything-asset-historical-data`,
   same smoke chain PASS (`deleted:true`, `health ok/running`).
 - Import sweep on installed package: 324 modules OK; 7 failures are all
   known optional extras (aiohttp/api, matrix, slack, telegram, Windows-only).
+- **Extras bundle** (same commit): macOS clean HOME + Linux `--network none`
+  container — install exit 0 and idempotent on re-run; `run_cli_app` invoked
+  all three CLI apps (`dct-north-cli`, `cli-anything-asset-historical-data`,
+  `chart`); the 6 skills load with no duplicates and no residual
+  `dct-north-cli`; the MCP server starts and lists 3 tools (gateway logs
+  "connected, 3 capabilities registered"); `installed.json` carries no
+  dev-machine paths and the MCP `command` points at the bundled Python.
+  Both runs also re-passed the main-package smoke chain.
+- Found and fixed while verifying extras: on a host with no registry cache and
+  no network, `run_cli_app` crashed before reaching the local app fallback
+  (upstream re-raises for required catalog sources). Fixed in
+  `get_app()` — `# FORK-HOOK: fork-cli-apps-offline-catalog`.
 
 ### Known limits
 
-- No third-party CLI Apps preinstalled (see offline-installer spec).
+- Third-party CLI Apps are not preinstalled; internal CLI/skill/MCP live in
+  the separate `nanobot-extras-*` bundle (see offline-extras spec).
 - No macOS x64 / Windows / Linux arm64 builds.
 - Linux pins diverge from macOS for 3 compiled packages (see above);
   runtime API usage verified compatible.
