@@ -50,6 +50,12 @@ Every hook id below must appear exactly once per call site in the codebase.
 | `fork-user-map-filter` | `nanobot/webui/ws_http.py` | `get_user_map().filter_sessions(payload["sessions"], user_id)` | Filter session list by requesting user |
 | `fork-user-map-dissociate` | `nanobot/webui/ws_http.py` | `get_user_map().dissociate(decoded_key)` | Drop the user binding when a persisted session is deleted |
 
+### CLI app catalog (offline)
+
+| Hook id | File | Anchor | Purpose |
+|---|---|---|---|
+| `fork-cli-apps-offline-catalog` | `nanobot/apps/cli/service.py` | `try: remote_apps = self.catalog(...) except Exception: remote_apps = []` in `get_app()` | Let a fully offline host (no registry cache, no network) resolve locally-installed CLI apps instead of raising before the local fallback |
+
 ## Rebase checklist
 
 1. `git grep "FORK-HOOK:"` must return exactly the sites in this document.
@@ -71,3 +77,6 @@ These hooks must remain behavior-preserving across rebases:
 - CORS: bootstrap endpoint responds with `Access-Control-Allow-Origin: *`.
 - User map: `new_chat` binds `user_id`; session list filters by user; deleting
   a persisted session unbinds it.
+- CLI app lookup: when the remote catalogs are unreachable (offline host with
+  no cache), `get_app()` degrades to the locally-installed `installed.json`
+  fallback instead of raising; a genuinely unknown name still raises 404.

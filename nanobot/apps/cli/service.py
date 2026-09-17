@@ -611,7 +611,16 @@ class CliAppManager:
 
     def get_app(self, name: str, *, force_refresh: bool = False) -> dict[str, Any]:
         wanted = name.lower()
-        for app in self.catalog(force_refresh=force_refresh)[0]:
+        # FORK-HOOK: fork-cli-apps-offline-catalog — see docs/fork-integration.md
+        # A fully offline host has no registry cache and cannot reach the
+        # catalogs; upstream raises here (required sources), which would abort
+        # before the locally-installed fallback below is ever consulted. Treat
+        # an unreachable catalog as "no remote match" so offline installs work.
+        try:
+            remote_apps = self.catalog(force_refresh=force_refresh)[0]
+        except Exception:
+            remote_apps = []
+        for app in remote_apps:
             if str(app.get("name", "")).lower() == wanted:
                 return app
         # Fall back to locally-installed apps not in any remote catalog
