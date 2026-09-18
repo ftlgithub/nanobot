@@ -194,9 +194,13 @@ for f in main.py llm_bridge.py mlx_guard.py text_chunk.py tts_budget.py warmup.p
   cp "$TTS_SRC/$f" "$STAGE/service/"
 done
 
-echo "==> copying MLX model (2.5GB)"
-mkdir -p "$STAGE/models"
-cp -r "$MODEL_SRC" "$STAGE/models/models--mlx-community--Qwen3-TTS-12Hz-1.7B-CustomVoice-6bit"
+echo "==> copying MLX model into the HF hub cache layout"
+# HF_HOME points at models/, and huggingface_hub resolves caches from <HF_HOME>/hub/
+# -- a flat models/models--* layout makes the service try to download instead.
+# cp -R (not -r) keeps the snapshots' relative symlinks into blobs/, which is what
+# stops the 2.5GB model turning into a 5GB bundle.
+mkdir -p "$STAGE/models/hub"
+cp -R "$MODEL_SRC" "$STAGE/models/hub/models--mlx-community--Qwen3-TTS-12Hz-1.7B-CustomVoice-6bit"
 
 echo "==> PM2 config + install doc + provenance"
 cp packaging/tts/ecosystem.tts.config.js "$STAGE/"
@@ -212,6 +216,7 @@ cp packaging/tts/INSTALL.md "$STAGE/安装说明.md"
 } > "$STAGE/BUILD-INFO.txt"
 
 echo "==> packing"
+find "$STAGE" -name '.DS_Store' -delete
 (cd "$OUT" && tar -czf "$NAME.tar.gz" "$NAME" && shasum -a 256 "$NAME.tar.gz" | tee SHA256SUMS)
 du -sh "$OUT/$NAME.tar.gz"
 echo "done."

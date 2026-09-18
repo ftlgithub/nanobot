@@ -1,25 +1,53 @@
 # TTS offline bundle releases
 
-## v0.3.5 macOS arm64 (built 2026-09-18)
+## v0.3.5 macOS arm64 (rebuilt 2026-09-18)
 
-Source commit: `0881dc66f121cc7cf0f5f167afd4fc59d200146f`.
+Source commit: `46c9b3b9dbab13551fbb1c88d81b7bba2ea1debe`.
 Build script: `packaging/build-tts.sh macos` (runs natively on macOS; needs the
-uv-managed Python 3.11 and the MLX 6bit model in the local HF cache).
+uv-managed Python 3.11 and the MLX 6bit model in the local HF cache). Built with
+`ALLOW_DIRTY=1` because the builder itself carried the fixes below; the payload
+is unaffected.
 
 | Tarball | Size | SHA-256 |
 |---|---|---|
-| `nanobot-tts-macos-arm64-v0.3.5.tar.gz` | 5.0 GB | `c762575d8e988e5e1efd7953458065f16115fad8b12052e2d8d6ea569fdef6cb` |
+| `nanobot-tts-macos-arm64-v0.3.5.tar.gz` | 2.8 GB | `51cab408fe4d6513d3b077ec1d3c97c04a83d383f7aea26901e6d62f06b5cb64` |
 
 Tarball lives under `packaging/build/tts/macos-arm64/` (git-ignored);
-`SHA256SUMS` next to it (`shasum -c` passes); 55789 entries, no `.DS_Store`.
-Contains uv-managed standalone Python 3.11, the macOS wheelhouse
+`SHA256SUMS` next to it (`shasum -c` passes); no `.DS_Store`. Contains
+uv-managed standalone Python 3.11, the macOS wheelhouse
 (`requirements-macos-arm64.txt`), the extension service source, the MLX 6bit
-weights (2.5 GB), PM2 config, `安装说明.md`, `BUILD-INFO.txt`.
+weights in the HF hub cache layout (`models/hub/models--mlx-community--…`),
+PM2 config, `安装说明.md`, `BUILD-INFO.txt`.
 
-Service source predates the Linux `backend="torch"` change: macOS forces the
-MLX branch regardless of that key, so this bundle's behavior is unchanged from
-production. Verification evidence was not recorded in this session — the
-service is the same source + model that production already runs.
+Service source predates the Linux `backend="torch"` change; macOS forces the MLX
+branch regardless of that key, so behavior matches production.
+
+### Verification (offline, on this machine)
+
+Installed the running services' ports: stopped PM2 `whisper-server`/`tts-server`,
+extracted this tarball to a temp dir, started it with only
+`HF_HOME=<bundle>/models HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` and the bundled
+Python — no patching of any kind.
+
+- `/health` → `{"status":"ok"}` in ~50 s; startup log shows the model loaded from
+  the bundle path (`…/models/hub/models--mlx-community--…/snapshots/…`), i.e. no
+  network access.
+- `POST /v1/audio/speech` ("你好，这是离线包合成测试") → HTTP 200, 76 base64 WAV
+  chunks totalling 2.43 s at 16 kHz (MLX output varies slightly run to run).
+
+### Fixed in this rebuild — all three were silent
+
+1. **Cache layout**: `HF_HOME` resolves caches from `<HF_HOME>/hub/`, so the
+   previous flat `models/models--*` layout made the service try to download and
+   die offline with `LocalEntryNotFoundError`. Now `models/hub/models--*`.
+2. **Symlinks**: macOS `cp -r` dereferences the cache's relative symlinks,
+   duplicating every blob — 5.0 GB for a 2.5 GB model. `cp -R` preserves them,
+   dropping the tarball from 5.0 GB to 2.8 GB.
+3. **`.DS_Store`** leaked from the source cache into the tarball; packing now
+   deletes them (Linux branch already did).
+
+The earlier 5.0 GB artifact (`c762575d…`) is obsolete — it could not start on an
+offline machine at all.
 
 ## v0.3.5 Linux x64 (2026-09-18)
 
