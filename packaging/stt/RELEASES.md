@@ -13,8 +13,13 @@ Linux in a `centos:7` container (needs Docker, so it runs from any Mac).
 
 | Platform | Tarball | Size | SHA-256 |
 |---|---|---|---|
-| macOS arm64 | `nanobot-stt-macos-arm64-v0.3.5.tar.gz` | 1.3 GB | `502d398af037e6d1e217741b20468215a42b0cb8ef927a471aa38d39c2ab69c9` |
-| Linux x64 (glibc ≤ 2.14) | `nanobot-stt-linux-x64-v0.3.5.tar.gz` | 1.4 GB | `d61ef0a01a426e24649daae6829c0bc9aba7341bf4bd76e8f65d1c1d8f67cceb` |
+| macOS arm64 | `nanobot-stt-macos-arm64-v0.3.5.tar.gz` | 1.3 GB | `d05a9f389693b079b4fd487c5bdeb8c7241264d0276304237f40189459c9fe8b` |
+| Linux x64 (glibc ≤ 2.14) | `nanobot-stt-linux-x64-v0.3.5.tar.gz` | 1.4 GB | `c51fd3e472a4f1851e8459bd57c8bce0a8b7bbaee1df68304143ba64311b5681` |
+
+Re-cut from `e642a719` after `packaging/stt/INSTALL.md` was corrected (the
+directory tree claimed a `lib/` dir that macOS no longer has) and the Linux
+build's yum cache was moved out of the wiped build dir so rebuilds reuse the
+toolchain. Both platforms were re-verified below against these new artifacts.
 
 Tarballs live under `packaging/build/stt/` (git-ignored build output);
 `SHA256SUMS` next to them (`shasum -c` passes).
@@ -40,9 +45,10 @@ Tarballs live under `packaging/build/stt/` (git-ignored build output);
   Metal is active (`ggml_metal_device_init: GPU name: MTL0 (Apple M4)`); ready
   after ~10 s; test clip ("你好，这是一个语音转写测试") →
   `{"text":"你好,这是一个语音转写测试。\n"}`.
-- Linux (`centos:7` amd64 container): `ldd` clean (all libs resolve from
-  bundled `lib/`); server ready after ~10 s; same clip → identical Chinese
-  text. Binary + lib max out at `GLIBC_2.14` (below the 2.17 floor).
+- Linux (`centos:7` amd64 container, re-run on the re-cut artifact): `ldd` reports
+  **0** unresolved libs (all resolve from bundled `lib/`); server ready after one
+  10 s poll; same clip → identical Chinese text. Binary + lib max out at
+  `GLIBC_2.14` (below the 2.17 floor).
 - Model sha gate passes in the script before packing.
 
 ### Why macOS is source-built (not assembled from brew)

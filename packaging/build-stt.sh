@@ -183,8 +183,9 @@ build_linux() {
 
   echo "==> whisper.cpp v$WHISPER_VERSION source build (centos:7 + devtoolset-9)"
   local builddir="$DIR/linux-build"
+  local yumcache="$DIR/linux-yumcache"
   rm -rf "$builddir"
-  mkdir -p "$builddir"
+  mkdir -p "$builddir" "$yumcache"
   echo "==> whisper.cpp source tarball (cached on host)"
   local whisper_tgz="$DIR/whisper.cpp-v$WHISPER_VERSION.tar.gz"
   if [ ! -f "$whisper_tgz" ]; then
@@ -194,7 +195,7 @@ build_linux() {
   cp "$whisper_tgz" "$builddir/"
   docker run --rm --platform linux/amd64 \
     -v "$PWD/$builddir:/out" \
-    -v "$PWD/$builddir/yumcache:/var/cache/yum" \
+    -v "$PWD/$yumcache:/var/cache/yum" \
     centos:7 bash -c '
       set -euo pipefail
       sed -i "s|^mirrorlist=|#mirrorlist=|; s|^#baseurl=http://mirror.centos.org|baseurl=https://mirrors.aliyun.com/centos-vault|" /etc/yum.repos.d/CentOS-Base.repo

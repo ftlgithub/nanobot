@@ -15,9 +15,14 @@ module.exports = {
         HF_HUB_OFFLINE: "1",
         TRANSFORMERS_OFFLINE: "1",
         NO_PROXY: "*",
-        // Linux bundle: torch backend + weights from the tarball.
-        NANOBOT_TTS_MODEL_DIR: __dirname + "/models/Qwen3-TTS-12Hz-1.7B-CustomVoice",
-        NANOBOT_TTS_DEVICE: "cuda",
+        // Linux bundle: torch needs the local weights + CUDA device. The macOS
+        // bundle keeps the HF cache layout and resolves it via HF_HOME (mlx).
+        ...(process.platform === "darwin"
+          ? {}
+          : {
+              NANOBOT_TTS_MODEL_DIR: __dirname + "/models/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+              NANOBOT_TTS_DEVICE: "cuda",
+            }),
       },
       autorestart: true,
       max_restarts: 10,

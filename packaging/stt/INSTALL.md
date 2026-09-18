@@ -1,16 +1,17 @@
 # STT 离线包 — 安装说明
 
 内容：whisper.cpp `whisper-server`（macOS arm64 / Linux x64）＋ `ggml-medium.bin`（1.5GB）
-＋ 各平台静态 ffmpeg（`--convert` 转码微信 mp3/m4a 必需）＋ ggml 后端库。
+＋ 各平台静态 ffmpeg（`--convert` 转码微信 mp3/m4a 必需）。macOS 为**单文件静态构建**
+（Metal 已编入二进制）；Linux 另带 ggml 后端 `.so`。
 
 ## 目录结构
 
 ```
 nanobot-stt-<platform>-v0.3.5.tar.gz
 ├── <platform>/                 # macos-arm64 或 linux-x64
-│   ├── bin/whisper-server      # 服务二进制
+│   ├── bin/whisper-server      # 服务二进制（macOS：静态链接、无外部依赖）
 │   ├── bin/ffmpeg              # 静态 ffmpeg（--convert 用）
-│   ├── lib/                    # 动态库（.dylib/.so，后端加速库）
+│   ├── lib/                    # 仅 Linux：版本化 .so（含 libgomp）；macOS 无此目录
 │   └── start-whisper.sh        # 启动脚本（自动配好库路径/PATH）
 ├── ggml-medium.bin             # 模型（跨平台通用，1.5GB）
 ├── ecosystem.stt.config.js     # PM2 配置
@@ -58,6 +59,6 @@ nanobot 以为在调 SiliconFlow，实际流量走本地。
 - Linux 二进制在 glibc 2.17 环境编译（centos:7），最高用到 GLIBC 2.14，
   低于 2.17 下限要求——兼容。
 - `--convert` 必须配 ffmpeg，本包已内置静态版；勿删 `bin/ffmpeg`。
-- macOS 版依赖 Metal 加速（Apple Silicon）；Linux 版为 CPU（OpenMP，
-  已内置 `libgomp`），GPU 服务器如需 CUDA 加速需另行构建。
+- macOS 版为静态单文件构建，Metal 加速已编入二进制（无 `lib/`、无外部 dylib）；
+  Linux 版为 CPU（OpenMP，包内自带 `libgomp`），GPU 服务器如需 CUDA 加速需另行构建。
 - 模型只有 medium 档；要 tiny/large 另行下载 ggml 文件替换即可（同目录）。
