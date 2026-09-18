@@ -34,6 +34,11 @@ Python — no patching of any kind.
   network access.
 - `POST /v1/audio/speech` ("你好，这是离线包合成测试") → HTTP 200, 76 base64 WAV
   chunks totalling 2.43 s at 16 kHz (MLX output varies slightly run to run).
+- Installed for real: extracted to `~/nanobot-voice` and started through the
+  bundle's `ecosystem.tts.config.js` under PM2 (the documented install path).
+  Besides the curl above, it served the browser extension's playback requests
+  (three further `POST /v1/audio/speech`, all HTTP 200), so the
+  extension → `:8081` path is verified with this artifact.
 
 ### Fixed in this rebuild — all three were silent
 

@@ -54,6 +54,14 @@ Tarballs live under `packaging/build/stt/` (git-ignored build output);
   No instruction-set floor: the main binary uses no AVX, and `libggml-cpu` ships
   AVX kernels behind runtime dispatch (`ggml_cpu_has_avx2/avx512/fma` exists,
   and no AVX-512 code is present).
+- Installed for real (macOS): tarball extracted to `~/nanobot-voice`, started through
+  the bundle's own PM2 config (`BUNDLE_DIR=… pm2 start ecosystem.stt.config.js`) —
+  the install path the tarball documents, previously untested. With a nanobot
+  instance pointed at it (`siliconflow.apiBase=http://localhost:9090`) and the
+  browser extension, three voice clips (webm → wav via the bundled ffmpeg) were
+  transcribed with `auto-detected language: zh (p≈0.99)` and the agent acted on
+  the transcript. Server log confirms Metal is compiled in
+  (`MTL : EMBED_LIBRARY = 1`) with SME/DOTPROD/ARM_FMA/FP16_VA/MATMUL_INT8 = 1.
 - Model sha gate passes in the script before packing.
 
 ### Why macOS is source-built (not assembled from brew)
