@@ -14,7 +14,7 @@ Linux in a `centos:7` container (needs Docker, so it runs from any Mac).
 | Platform | Tarball | Size | SHA-256 |
 |---|---|---|---|
 | macOS arm64 | `nanobot-stt-macos-arm64-v0.3.5.tar.gz` | 1.3 GB | `d05a9f389693b079b4fd487c5bdeb8c7241264d0276304237f40189459c9fe8b` |
-| Linux x64 (glibc ≤ 2.14) | `nanobot-stt-linux-x64-v0.3.5.tar.gz` | 1.4 GB | `c51fd3e472a4f1851e8459bd57c8bce0a8b7bbaee1df68304143ba64311b5681` |
+| Linux x64 (needs glibc ≥ 2.17) | `nanobot-stt-linux-x64-v0.3.5.tar.gz` | 1.4 GB | `c51fd3e472a4f1851e8459bd57c8bce0a8b7bbaee1df68304143ba64311b5681` |
 
 Re-cut from `e642a719` after `packaging/stt/INSTALL.md` was corrected (the
 directory tree claimed a `lib/` dir that macOS no longer has) and the Linux
@@ -47,8 +47,13 @@ Tarballs live under `packaging/build/stt/` (git-ignored build output);
   `{"text":"你好,这是一个语音转写测试。\n"}`.
 - Linux (`centos:7` amd64 container, re-run on the re-cut artifact): `ldd` reports
   **0** unresolved libs (all resolve from bundled `lib/`); server ready after one
-  10 s poll; same clip → identical Chinese text. Binary + lib max out at
-  `GLIBC_2.14` (below the 2.17 floor).
+  10 s poll; same clip → identical Chinese text. Measured symbol floors across
+  every shipped file: `GLIBC_2.17` (from `libggml-base`/`libgomp`; the rest are
+  2.14), `GLIBCXX_3.4.19`, `CXXABI_1.3.7`, and ffmpeg carries no GLIBC symbols at
+  all (fully static) — so any glibc ≥ 2.17 distro runs it; musl/Alpine does not.
+  No instruction-set floor: the main binary uses no AVX, and `libggml-cpu` ships
+  AVX kernels behind runtime dispatch (`ggml_cpu_has_avx2/avx512/fma` exists,
+  and no AVX-512 code is present).
 - Model sha gate passes in the script before packing.
 
 ### Why macOS is source-built (not assembled from brew)

@@ -56,8 +56,10 @@ nanobot 以为在调 SiliconFlow，实际流量走本地。
 
 ## 已知限制
 
-- Linux 二进制在 glibc 2.17 环境编译（centos:7），最高用到 GLIBC 2.14，
-  低于 2.17 下限要求——兼容。
+- Linux 二进制在 glibc 2.17 环境编译（centos:7）；实测最高只用到 **GLIBC_2.17**
+  （来自 `libggml-base`/`libgomp`，其余文件为 2.14），另需 `GLIBCXX_3.4.19`、`CXXABI_1.3.7`
+  ——目标机 glibc ≥2.17 即可（RHEL/CentOS 7+、Ubuntu 13.10+、Debian 8+ 等 glibc 发行版；
+  Alpine 等 musl 发行版不支持）。x86_64 专用。
 - `--convert` 必须配 ffmpeg，本包已内置静态版；勿删 `bin/ffmpeg`。
 - macOS 版为静态单文件构建，Metal 加速已编入二进制（无 `lib/`、无外部 dylib）；
   Linux 版为 CPU（OpenMP，包内自带 `libgomp`），GPU 服务器如需 CUDA 加速需另行构建。

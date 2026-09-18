@@ -63,7 +63,7 @@ STT — build-stt.sh
   2. whisper.cpp v1.9.1 源码编译 → whisper-server + 启动脚本 + 模型 + PM2 配置 + 安装说明
   3. tar + sha256 → packaging/build/stt/
   注意：两平台均源码编译。macOS 静态链接 + Metal 编入二进制（单文件自包含，无 lib/）；
-        Linux 在 centos:7 容器内编译（glibc 上限 2.14），可在 macOS 上跑
+        Linux 在 centos:7 容器内编译（目标机 glibc ≥2.17 即可），可在 macOS 上跑
 ```
 
 详见各阶段文档：`locks/README.md`（依赖策略）、`tui-binaries/README.md`
@@ -83,7 +83,7 @@ macOS 用干净 HOME，Linux 用 docker 断网容器。历史验证记录见
 见 `.scratch/offline-extras/spec.md`。
 
 **STT**：macOS 实机 + Linux `centos:7` 容器各转写一段中文 clip 通过
-（容器内 `ldd` 干净、glibc ≤ 2.14）。见 `stt/RELEASES.md`。
+（容器内 `ldd` 干净、目标机 glibc ≥2.17）。见 `stt/RELEASES.md`。
 
 **TTS**：容器内已验证 service 编译、依赖 import 横扫、torch 后端接线、包内权重可解析。
 `/v1/audio/speech` 合成冒烟**需 NVIDIA GPU 目标机**（torch 后端强制 CUDA；纯 CPU 目标机不在支持范围）。

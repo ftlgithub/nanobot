@@ -8,7 +8,7 @@
 （含 Metal/blas/CPU 各代），ffmpeg 取 evermeet 静态版。`@loader_path/../lib`
 rpath 开箱即用。只保留 loader 实际查找的版本化 dylib，其余删除。
 
-## Linux x64（glibc ≤ 2.14，低于 2.17 下限要求）
+## Linux x64（目标机 glibc ≥ 2.17；实测最高只用到 GLIBC_2.17）
 
 quay.io 不通，改用 docker.io `centos:7` + vault 源 + devtoolset-9 + cmake3，
 whisper.cpp v1.9.1 源码编译（`WHISPER_BUILD_TESTS=OFF`，`whisper-server` target；
