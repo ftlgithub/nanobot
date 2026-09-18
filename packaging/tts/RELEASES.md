@@ -1,5 +1,26 @@
 # TTS offline bundle releases
 
+## v0.3.5 macOS arm64 (built 2026-09-18)
+
+Source commit: `0881dc66f121cc7cf0f5f167afd4fc59d200146f`.
+Build script: `packaging/build-tts.sh macos` (runs natively on macOS; needs the
+uv-managed Python 3.11 and the MLX 6bit model in the local HF cache).
+
+| Tarball | Size | SHA-256 |
+|---|---|---|
+| `nanobot-tts-macos-arm64-v0.3.5.tar.gz` | 5.0 GB | `c762575d8e988e5e1efd7953458065f16115fad8b12052e2d8d6ea569fdef6cb` |
+
+Tarball lives under `packaging/build/tts/macos-arm64/` (git-ignored);
+`SHA256SUMS` next to it (`shasum -c` passes); 55789 entries, no `.DS_Store`.
+Contains uv-managed standalone Python 3.11, the macOS wheelhouse
+(`requirements-macos-arm64.txt`), the extension service source, the MLX 6bit
+weights (2.5 GB), PM2 config, `安装说明.md`, `BUILD-INFO.txt`.
+
+Service source predates the Linux `backend="torch"` change: macOS forces the
+MLX branch regardless of that key, so this bundle's behavior is unchanged from
+production. Verification evidence was not recorded in this session — the
+service is the same source + model that production already runs.
+
 ## v0.3.5 Linux x64 (2026-09-18)
 
 Source commit: `86b2257882332164b5b171a720793c7f843eea4e`.

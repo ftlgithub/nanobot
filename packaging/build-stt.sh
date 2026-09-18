@@ -69,42 +69,56 @@ pack_platform() {
 }
 
 build_macos() {
-  need brew
-  need 7z
+  need cmake
+  need codesign
+  xcode-select -p >/dev/null 2>&1 || die "Xcode command line tools required"
   local platform="macos-arm64"
   local name="nanobot-stt-${platform}-v${VERSION}"
   local stage="$DIR/$platform"
-  local cellar="/opt/homebrew/Cellar/whisper.cpp/$WHISPER_VERSION"
-  local ggml_lib="/opt/homebrew/opt/ggml/lib"
 
-  brew list --versions whisper-cpp | grep -q "$WHISPER_VERSION" \
-    || die "need brew whisper.cpp $WHISPER_VERSION"
   check_model
 
   echo "==> staging $name"
   rm -rf "$stage"
-  mkdir -p "$stage/bin" "$stage/lib"
+  mkdir -p "$stage/bin"
 
-  echo "==> whisper binaries + dylibs from brew Cellar"
-  cp "$cellar/bin/whisper-server" "$stage/bin/"
+  echo "==> whisper.cpp v$WHISPER_VERSION source build (static + Metal)"
+  local src_tgz="$DIR/whisper.cpp-v$WHISPER_VERSION.tar.gz"
+  if [ ! -f "$src_tgz" ]; then
+    (cd "$DIR" && curl -sSL --retry 5 --max-time 600 -o "whisper.cpp-v$WHISPER_VERSION.tar.gz" "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v$WHISPER_VERSION.tar.gz")
+  fi
+  tar -tzf "$src_tgz" >/dev/null || die "whisper tarball corrupt: $src_tgz"
+  local builddir="$DIR/macos-build"
+  rm -rf "$builddir"
+  mkdir -p "$builddir/src"
+  tar -xzf "$src_tgz" -C "$builddir/src"
+  # static link + Metal compiled in + no OpenMP (falls back to system Accelerate):
+  # a brew-derived bundle cannot be made self-contained because ggml only looks
+  # for its backend plugins at a compile-time libexec path (no env override).
+  cmake -S "$builddir/src/whisper.cpp-$WHISPER_VERSION" -B "$builddir/cmake" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DWHISPER_BUILD_TESTS=OFF \
+    -DWHISPER_BUILD_EXAMPLES=ON \
+    -DGGML_METAL=ON \
+    -DGGML_OPENMP=OFF > "$builddir/cmake.log" 2>&1 \
+    || { tail -25 "$builddir/cmake.log" >&2; die "cmake configure failed"; }
+  cmake --build "$builddir/cmake" --target whisper-server -j"$(sysctl -n hw.ncpu)" \
+    >> "$builddir/cmake.log" 2>&1 \
+    || { tail -25 "$builddir/cmake.log" >&2; die "cmake build failed"; }
+  cp "$builddir/cmake/bin/whisper-server" "$stage/bin/"
   chmod +x "$stage/bin/whisper-server"
-  cp "$cellar/lib/libwhisper.1.dylib" "$stage/lib/"
-  shopt -s nullglob
-  for f in "$ggml_lib"/libggml.0.dylib "$ggml_lib"/libggml-base.0.dylib \
-           "$ggml_lib"/libggml-metal.so "$ggml_lib"/libggml-blas.so \
-           "$ggml_lib"/libggml-cpu-*.so; do
-    [ -e "$f" ] && cp "$f" "$stage/lib/"
-  done
-  shopt -u nullglob
+  rm -rf "$builddir"
 
-  echo "==> fixing absolute rpaths to @rpath (target has no brew)"
-  local refs
-  refs="$(otool -L "$stage/bin/whisper-server" | grep '^/opt/homebrew' | awk '{print $1}' || true)"
-  for r in $refs; do
-    install_name_tool -change "$r" "@rpath/$(basename "$r")" "$stage/bin/whisper-server"
-  done
-  otool -L "$stage/bin/whisper-server" | grep -q '^/opt/homebrew' \
-    && die "absolute brew rpath remains" || true
+  echo "==> asserting no non-system dependencies"
+  local deps
+  deps="$(otool -L "$stage/bin/whisper-server" | grep -E '^[[:space:]]+(/opt/homebrew|/usr/local)' || true)"
+  [ -z "$deps" ] || die "binary references non-system paths: $deps"
+
+  echo "==> ad-hoc signing"
+  codesign --force --sign - "$stage/bin/whisper-server" >/dev/null 2>&1 \
+    || die "codesign failed"
+  codesign -v "$stage/bin/whisper-server" >/dev/null 2>&1 || die "signature invalid"
 
   echo "==> static ffmpeg (evermeet 7.1.1, cached binary preferred)"
   local ffmpeg_cache="$DIR/ffmpeg-macos-7.1.1"
@@ -128,7 +142,7 @@ build_macos() {
     || die "unexpected macOS ffmpeg version"
 
   cp packaging/stt/start-whisper.sh "$stage/"
-  pack_platform "$platform" "evermeet 7.1.1-tessus static (intel, Rosetta on arm64)"
+  pack_platform "$platform" "evermeet 7.1.1-tessus static (intel, Rosetta on arm64); whisper.cpp static, Metal"
 }
 
 build_linux() {

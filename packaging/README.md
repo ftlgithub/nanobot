@@ -15,12 +15,19 @@
 | `extras/` | **内部资产 extras 包**：`stage-assets.sh`、`installer.py`、`install-extras.sh`、`安装说明.md`、`README.md` | ✅ |
 | `extras/assets/` | extras 内部资产实际内容（内网信息/凭据/内部 wheel） | ❌ **gitignored** |
 | `build-extras.sh` | extras 组包（资产 + 安装器 + 说明 → tarball + sha256） | ✅ |
-| `build/` | 构建输出（tarball、wheelhouse、解包目录） | ❌（173MB＋，git-ignored） |
+| `tts/` | **TTS 语音合成包输入**：双平台依赖锁、PM2 配置、`RELEASES.md`、`INSTALL.md`／`INSTALL.linux.md` | ✅ |
+| `stt/` | **STT 语音转写包输入**：`start-whisper.sh`、PM2 配置、`RELEASES.md`、`INSTALL.md`、`README.md` | ✅ |
+| `build-tts.sh` | TTS 组包（`./packaging/build-tts.sh [macos\|linux]`） | ✅ |
+| `build-stt.sh` | STT 组包（`./packaging/build-stt.sh [macos\|linux\|all]`） | ✅ |
+| `build/` | 构建输出（tarball、wheelhouse、解包目录） | ❌（GB 级，git-ignored） |
 | `nanobot/tui/bin/`（仓库根下，非本目录） | TUI 二进制落盘处 | ❌（仅 `.gitkeep` 入库） |
 
 > **主包 vs extras**：`build.sh` 出通用主包（`nanobot-offline-*`）；`build-extras.sh` 出**内部资产**
 > extras 包（`nanobot-extras-*`，跨平台单包）。两者版本需配套；内部信息与凭据只在 extras 中。
 > 详见 [`extras/README.md`](extras/README.md)。
+>
+> **语音包（独立演进，不进主包）**：`build-tts.sh` 出 `nanobot-tts-<平台>-*`；
+> `build-stt.sh` 出 `nanobot-stt-<平台>-*`。体量 GB 级、可能单独上算力机，故与主包分开分发。
 
 ## 构建流程
 
@@ -42,8 +49,26 @@
    → packaging/build/extras/nanobot-extras-v<ver>.tar.gz
 ```
 
+**语音包（STT/TTS，按平台）**
+
+```
+TTS — build-tts.sh
+  1. 前置：扩展 tts-server 源码、对应平台依赖锁、模型权重（mac: MLX 6bit 缓存；linux: 原版权重）
+  2. 独立 Python 3.11 + wheelhouse 离线装依赖 + service + 模型 + PM2 配置 + 安装说明
+  3. tar + sha256 → packaging/build/tts/<平台>/
+  注意：linux 分支必须在 Linux 容器内跑（staged Python 是 Linux 解释器，macOS 无法执行）
+
+STT — build-stt.sh
+  1. 前置：模型 ggml-medium.bin（sha256 门禁）、ffmpeg 缓存、cmake + Xcode CLT（mac）/ docker（linux）
+  2. whisper.cpp v1.9.1 源码编译 → whisper-server + 启动脚本 + 模型 + PM2 配置 + 安装说明
+  3. tar + sha256 → packaging/build/stt/
+  注意：两平台均源码编译。macOS 静态链接 + Metal 编入二进制（单文件自包含，无 lib/）；
+        Linux 在 centos:7 容器内编译（glibc 上限 2.14），可在 macOS 上跑
+```
+
 详见各阶段文档：`locks/README.md`（依赖策略）、`tui-binaries/README.md`
-（二进制来源）、`extras/README.md`（extras 资产与安装器）、`RELEASES.md`（发版清单）。
+（二进制来源）、`extras/README.md`（extras 资产与安装器）、`RELEASES.md`（主包发版清单）、
+`tts/RELEASES.md`、`stt/RELEASES.md`（语音包发版清单）。
 
 ## 验证
 
@@ -56,6 +81,13 @@ macOS 用干净 HOME，Linux 用 docker 断网容器。历史验证记录见
 `run_cli_app` 调起、6 个 skill 可见无重复、MCP 能启动列出 tools、
 `installed.json` 无开发机绝对路径、主包冒烟仍通过。
 见 `.scratch/offline-extras/spec.md`。
+
+**STT**：macOS 实机 + Linux `centos:7` 容器各转写一段中文 clip 通过
+（容器内 `ldd` 干净、glibc ≤ 2.14）。见 `stt/RELEASES.md`。
+
+**TTS**：容器内已验证 service 编译、依赖 import 横扫、torch 后端接线、包内权重可解析。
+`/v1/audio/speech` 合成冒烟**需 NVIDIA GPU 目标机**（torch 后端强制 CUDA；纯 CPU 目标机不在支持范围）。
+见 `tts/RELEASES.md`。
 
 ## 后续可选项（已评估，暂缓）
 
